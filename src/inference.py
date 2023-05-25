@@ -2,24 +2,24 @@ import yaml
 import os.path
 import gc, math, logging
 
-import numpy as np
+#import numpy as np
 import pandas as pd
-import pyarrow as pa
-import seaborn as sns
-import fastparquet as fp
-import pyarrow.parquet as pq
-import matplotlib.pyplot as plt
+#import pyarrow as pa
+#import seaborn as sns
+#import fastparquet as fp
+#import pyarrow.parquet as pq
+#import matplotlib.pyplot as plt
 
 from rfe import RFE
 from time import time
-from tqdm import tqdm
+#from tqdm import tqdm
 from getpass import getpass
-from lightgbm import LGBMClassifier
+#from lightgbm import LGBMClassifier
 from jinja2 import Environment, FileSystemLoader
 from typing import Tuple, Dict
-from sklearn.model_selection import train_test_split
-from teradataml import DataFrame, fastexport, fastload, in_schema, create_context, remove_context
-from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
+#from sklearn.model_selection import train_test_split
+#from teradataml import DataFrame, fastexport, fastload, in_schema, create_context, remove_context
+#from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
 from schema import And, Or, Optional, SchemaError, Schema
 
 #import bifrost
@@ -86,6 +86,9 @@ class InferenceModel():
                 "parameters": {
                     "description": str, 
                     "public_tbl": str,
+                    "public_tbl_eng": str,
+                    "public_tbl_schm": str,
+                    "public_tbl_db": str,
                     "mob": int,
                     "approved_column": str, 
                     "approved_value": Or(str, int),
@@ -125,14 +128,17 @@ class InferenceModel():
                 
         return parameters, engines_params, data_srcs_params
 
-
+    #Validate config file
+    def __validate_config(self):
+        pass
+    
     #Recursive feature elimination implementation
-    def rfe(self):
-        #Initializes RFE object as an instance attribute
-        rfe_obj = RFE(self.parameters, self.__data_srcs_params)
-        
+    def rfe(self):        
+        #Uses the RFE object instantiated during initialization of the class
+        rfe_obj = self.__rfe_agent
+
         #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
-        rfe_obj.narrow_down_candidates_univar() 
+        rfe_obj.narrow_down_candidates_univar()
 
         #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
         rfe_obj.choose_top_features_multivar() 
