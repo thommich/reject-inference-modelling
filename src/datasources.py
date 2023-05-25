@@ -5,6 +5,9 @@ from enum import Enum
 from Type import List
 from typing import Dict, Tuple, List, Any
 from dataclasses import dataclass
+from teradataml.context.context import create_context, remove_context
+from teradataml import DataFrame
+import math
 
 
 class DataSourceGroup():
@@ -16,13 +19,37 @@ class DataSourceGroup():
         ds_config: Dict[]
     """
 
+    def __init__(self, ds_config: Dict):
+        #self.__data_srcs_params = ds_config
+        self.__data_sources = __set_data_sources(ds_config)
 
-    def get_ds_group(self, ds_config: str) -> List[DataSource]:
-        data sources = []
+
+    #Binds the data source parameters to a different instance of DataSource each
+    def __set_data_sources (self) -> List [DataSource]:
+        data_sources = []
+
         for ds in ds_config:
-        data_sources.append(DataSource(ds.schema, ds.database, ds.technology, ds.parquet_file))
+            data_sources.append(DataSource(ds.schema, ds.database, ds.technology, ds.parquet_file_name))
+        
+        return data_sources
+
+    
+    #Return list with all datasources
+    def get_ds_group(self, ds_config: str) -> List[DataSource]:
+        return self.data_sources
+
+    
+    #Returns the entity containing data about the public used for modelling
+    def get_public_df(self, ds_config: str) -> DataSource:
+        pass
+
+    #Returns a consolidated dataframe with the top variables selected from each source through the RFE algorithm
+    def get_rfe_df(self, ds_config: str) -> DataSource:
+        pass
 
 
+
+@dataclass
 class DataSource():
     """
         As tabelas no Loom usam gerenciadores de contexto para sinalizar aos campos quais tabelas eles estão sendo criados em.
@@ -32,17 +59,44 @@ class DataSource():
         alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    def __init__(
-        self,
-        schema: str,
-        database: str,
-        technology: str,
-        pq_file: str
-    ):
-        self._schema: str = schema
-        self._database: str = database
-        self._technology: str = technology
-        self._pq_file: str = pq_file
+    schema: str
+    database: str
+    engine: str
+    pq_file_name: str
+    all_features: List[str]
+
+    def __init__()
+
+    #Read data from DBMS
+    def read_batch_of_data(self, batch_size: int):
+        pass
+
+    #Read data from DBMS
+    def read_from_src(self):
+        connection = get_db_connection(self.engine)
+        connection.execute()
+        pass
+
+    def get_db_connection(self, engine: str, schema: str, database: str):
+        try:
+            con = create_context(
+                host = "",
+                username = "",
+                password = "",
+                logmech = "" 
+            )
+        except:
+        
+        return con
+
+    def merge_with_public_df(self, public_df):
+        pass
+
+
+    def get_total_batches(self, chunk_size: int):
+    #    self.get_db_connection(self.engine, self.schema, self.database)
+        table_meta = DataFrame.from_table(in_schema(self.schema, self.database))
+        return math.ceil(len(table_meta.columns)/chunk_size)
 
 
 
