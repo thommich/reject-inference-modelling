@@ -1,9 +1,12 @@
 import yaml
-from pydantic import BaseModel from abc import ABC, abstractmethod
-from enum import Enum from Type import List
+
+from tqdm import tqdm
+from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Dict, Tuple, List, Any
 
-from .datasources import DataSourceGroup
+from datasources import DataSourceGroup
+from engines import Engine
 
 
 class RFE():
@@ -23,8 +26,9 @@ class RFE():
         data_srcs_params: Dict
     ):
         self.parameters = parameters
+        self.engines = Engine(engines_params)
         self.data_sources_group = DataSourceGroup(data_srcs_params)
-        self.engines = Engines(engines_params)
+
 
     #Select the 'n_features_batch' best feature candidates from each data source (univariate analysis)
     def __narrow_down_candidates_univar(self, chunk_size: int):
@@ -50,24 +54,22 @@ class RFE():
         #Write best candidates to .parquet file
         pass
 
+            # df_impfeat = pd.read_parquet('./model_files/' + file_name, columns=['PK_RIZNUMDOC_XX'] + vars_list[i*vars_batch_n: (1+1)*vars_batch_n])
+            # df_impfeat.columns 
+            # df_impfeat.columns.str.upper() 
+            # df_impfeat = df_impfeat[[col for col in df_impfeat.columns.str.upper().to_list() if col not in ['FLG_CNTRTC']]]
+            # df_impfeat = df_impfeat[df_impfeat['PK_RIZNUMDOC_XX'].isin(idx_public)]
+            # df_impfeat.set_index(['PK_RIZNUMDOC_XX'], inplace=True)
 
+            # df_pub = self.df_public[self.df_public['PK_RIZNUMDOC_XX'].isin(idx_public)] 
+            # df_pub.set_index(['PK_RIZNUMDOC_xx'], inplace=True)
+            # setattr(self, 'merged_df', pd.merge(df_impfeat, df_pub, left_index=True, right_index=True))
 
-df_impfeat = pd.read_parquet('./model_files/' + file_name, columns=['PK_RIZNUMDOC_XX'] + vars_list[i*vars_batch_n: (1+1)*vars_batch_n])
-df_impfeat.columns 
-df_impfeat.columns.str.upper() 
-df_impfeat = df_impfeat[[col for col in df_impfeat.columns.str.upper().to_list() if col not in ['FLG_CNTRTC']]]
-df_impfeat = df_impfeat[df_impfeat['PK_RIZNUMDOC_XX'].isin(idx_public)]
-df_impfeat.set_index(['PK_RIZNUMDOC_XX'], inplace=True)
-
-df_pub = self.df_public[self.df_public['PK_RIZNUMDOC_XX'].isin(idx_public)] 
-df_pub.set_index(['PK_RIZNUMDOC_xx'], inplace=True)
-setattr(self, 'merged_df', pd.merge(df_impfeat, df_pub, left_index=True, right_index=True))
-
-del df_impfeat
-del df_pub
-gc.collect()
-#print(self.merged_df.head())
-imp_feat_batch = self._get_important_features (self.merged_df, vars list, 'Avaliando variáveis do(a) setattr(self, 'df feats eval book', pd.concat([getattr(self, 'df_feats_eval_book'), imp_feat_batch])) +bk_name)
+            # del df_impfeat
+            # del df_pub
+            # gc.collect()
+            # #print(self.merged_df.head())
+            # imp_feat_batch = self._get_important_features (self.merged_df, vars list, 'Avaliando variáveis do(a) setattr(self, 'df feats eval book', pd.concat([getattr(self, 'df_feats_eval_book'), imp_feat_batch])) +bk_name)
 
 
 

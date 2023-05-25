@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import yaml
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
 from enum import Enum
-from Type import List
 from typing import Dict, Tuple, List, Any
 from dataclasses import dataclass
 from teradataml.context.context import create_context, remove_context
@@ -21,16 +22,16 @@ class DataSourceGroup():
 
     def __init__(self, ds_config: Dict):
         #self.__data_srcs_params = ds_config
-        self.__data_sources = __set_data_sources(ds_config)
+        self.__data_sources = self.__set_data_sources(ds_config)
 
 
     #Binds the data source parameters to a different instance of DataSource each
-    def __set_data_sources (self) -> List [DataSource]:
+    def __set_data_sources (self, ds_config: Dict) -> List [DataSource]:
         data_sources = []
 
-        for ds in ds_config:
-            data_sources.append(DataSource(ds.schema, ds.database, ds.technology, ds.parquet_file_name))
-        
+        for ds_info in ds_config:
+            data_sources.append(DataSource(ds_config[ds_info]))
+
         return data_sources
 
     
@@ -59,13 +60,19 @@ class DataSource():
         alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    schema: str
-    database: str
-    engine: str
-    pq_file_name: str
-    all_features: List[str]
 
-    def __init__()
+    # all_features: List[str]
+    # alias
+    # srcs[
+    #   src_list['technology'],
+    #   src_list['schema'],
+    #   src_list['physical_name'],
+    #   src_list['remove_fields'],
+    #   src_list['qry_override'])]
+    def __init__(self, ds_info: dict):
+        self.__alias = ds_info['alias']
+        self.__sources = ds_info['sources']
+        pass
 
     #Read data from DBMS
     def read_batch_of_data(self, batch_size: int):
@@ -86,6 +93,7 @@ class DataSource():
                 logmech = "" 
             )
         except:
+            pass
         
         return con
 
@@ -108,10 +116,10 @@ class DataSourceEnum(Enum):
     """
 
     BC = 'BACEN'
-    BX = APONTAMENTOS'
-    BVS = BOAVISTA'
-    QUOD IND = 'QUOD INDICADORES'
-    QUOD SCORE = 'QUOD_SCORE'
+    BX = 'APONTAMENTOS'
+    BVS = 'BOAVISTA'
+    QUOD_IND = 'QUOD INDICADORES'
+    QUOD_SCORE = 'QUOD_SCORE'
 
     @classmethod
     def from_teradata(cls): 
@@ -119,4 +127,4 @@ class DataSourceEnum(Enum):
     
     @classmethod
     def from_cdp(cls):
-        return [cls.QUOD IND, cls.QUOD_SCORE]
+        return [cls.QUOD_IND, cls.QUOD_SCORE]
