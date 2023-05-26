@@ -3,9 +3,10 @@ import yaml
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, List, Any, Union
 
-from datasources import DataSourceGroup
+import pandas as pd
+from datasources import DataSourceGroup, DataSource
 from engines import Engine
 
 
@@ -20,25 +21,23 @@ class RFE():
             alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    def __init__( self,
-        parameters: Dict,
-        engines_params: Dict,
-        data_srcs_params: Dict
-    ):
-        self.parameters = parameters
-        self.engines = Engine(engines_params)
-        self.data_sources_group = DataSourceGroup(data_srcs_params)
+    __parameters: Dict[Any, Any]
+    approved_column: str
+    approved_value: Union[int, str]
+    target_column: str 
+    remove_bc: bool
+    n_features: int
+    max_n_feats_join: int
+    mob: int
+
+
+    def __init__( self, parameters: Dict) -> None:
+        self.__parameters = parameters       
 
 
     #Select the 'n_features_batch' best feature candidates from each data source (univariate analysis)
-    def __narrow_down_candidates_univar(self, chunk_size: int):
-        #Get df_public from DB and store in memory
+    def narrow_down_candidates_univar(self, df_public: pd.DataFrame, data_sources_group: DataSourceGroup):
 
-        #Get df_public index to use later
-
-        #Loops through each data source specified on the config file        
-        for ds in self.data_sources_group:
-            #Trigger DB join pub + book
 
             #Estimate total number of batches and start reading data from the DB
             num_total_batches = ds.get_total_batches(chunk_size)
@@ -71,15 +70,6 @@ class RFE():
             # #print(self.merged_df.head())
             # imp_feat_batch = self._get_important_features (self.merged_df, vars list, 'Avaliando variáveis do(a) setattr(self, 'df feats eval book', pd.concat([getattr(self, 'df_feats_eval_book'), imp_feat_batch])) +bk_name)
 
-
-
-
-
-
-
-
-    def get_public_df(self): # -> List[str]: 
-        pass
     
     def get_rfe_df(self): # -> List[str]: 
         pass

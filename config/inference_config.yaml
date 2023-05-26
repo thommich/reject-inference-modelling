@@ -14,72 +14,51 @@ parameters:
 engines:
   TERADATA:
     conn_vars:
-    - host:
-        local:
-          PRODNP: "10.225.1.30"
-          CLOUDNP: "10.86.1.247"
-        sagemaker:
-          PRODNP: "prodnpcop1.itau"
-          CLOUDNP: "cloudnpcop1.itau"
-    - username: null
-    - password: null
-    - logmech: 'LAPD'
+      host: "10.225.1.30"
+      username: null
+      password: null
+      logmech: 'LAPD'
   HADOOP:
     conn_vars:
-    - host: null    
-    - database: null
-    - user: null
-    - password: null
-    - datahub: null
+      host: null    
+      database: null
+      user: null
+      password: null
+      datahub: null
 
 datasources: 
   BOOK BACEN:
     alias: 'BC'
-    sources:
-    - technology: TERADATA
+    source:
+      technology: TERADATA
       schema: 'MESB_GED' 
       physical_name: 'BK_BACEN_IND' 
       remove_fields: null
-      qry_override: null  
   BOOK APONTAMENTOS:
     alias: 'BX'
-    sources:
-    - technology: TERADATA
+    source:
+      technology: TERADATA
       schema: 'MESB_GED' 
       physical_name: 'BK_APONT_IND'
       remove_fields: null 
-      qry_override: null
   BOOK BVS:
     alias: 'BVS'
-    sources:
-    - technology: TERADATA
+    source:
+      technology: TERADATA
       schema: 'MESB_GED'
       physical_name: 'BK_BVSPF_IND' 
       remove_fields: ['VL_CODMDLSC0001_01M_BV'] 
-      qry_override: null
   BOOK_QUOD_INDICADORES:
     alias: 'QUODIND'
-    sources:
-    - technology: HADOOP
+    source:
+      technology: HADOOP
       schema: 'GHP00071' 
       physical_name: 'VIEW_QUOD_CADPOSITIVO_INDICADORES'
       remove_fields: null
-      qry_override: null
-    - technology: HADOOP
-      schema: 'RT2' 
-      physical_name: 'RT2_AI6_DK5RBB09_QUODINDICADORESPF_001'
-      remove_fields: null
-      qry_override: null
   BOOK_QUOD_SCORES:
     alias: 'QUODSCR'
-    sources:
-    - technology: HADOOP
+    source:
+      technology: HADOOP
       schema: 'GHP00071' 
       physical_name: 'EXP_QUOD_CADPOSITIVO_SCORE'
       remove_fields: null
-      qry_override: null
-    - technology: HADOOP
-      schema: 'RT2' 
-      physical_name: 'RT2_AI6_DK5RBB09_QUODSCOREPF_001'
-      remove_fields: null
-      qry_override: null

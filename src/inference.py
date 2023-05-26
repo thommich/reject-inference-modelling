@@ -2,30 +2,34 @@ import yaml
 import os.path
 import gc, math, logging
 
-#import numpy as np
+
+from rfe import RFE
+from engines import Engine
+from datasources import DataSourceGroup, DataSource
+
 import pandas as pd
+from time import time
+from getpass import getpass
+
+from jinja2 import Environment, FileSystemLoader
+from typing import Tuple, Dict
+from enum import EnumMeta
+from schema import And, Or, Optional, SchemaError, Schema
+from typing import Any
+
+#from tqdm import tqdm
+#from sklearn.model_selection import train_test_split
+#from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
+#from lightgbm import LGBMClassifier
+#import bifrost
+#from bifrost import Hadoop
+#pd.set_option('display.max_rows', None) 
+#pd.set_option('display.max_columns', None)
 #import pyarrow as pa
 #import seaborn as sns
 #import fastparquet as fp
 #import pyarrow.parquet as pq
 #import matplotlib.pyplot as plt
-
-from rfe import RFE
-from time import time
-#from tqdm import tqdm
-from getpass import getpass
-#from lightgbm import LGBMClassifier
-from jinja2 import Environment, FileSystemLoader
-from typing import Tuple, Dict
-#from sklearn.model_selection import train_test_split
-#from teradataml import DataFrame, fastexport, fastload, in_schema, create_context, remove_context
-#from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
-from schema import And, Or, Optional, SchemaError, Schema
-
-#import bifrost
-#from bifrost import Hadoop
-#pd.set_option('display.max_rows', None) 
-#pd.set_option('display.max_columns', None)
 
 # Create Logger
 logger = logging.getLogger(__name__)
@@ -39,15 +43,6 @@ handler.setFormatter(logging.Formatter('%(asctime)s|%(name)s|%(levelname)s: %(me
 #Add handler to Logger
 logger.addHandler(handler)
 
-#Open Teradata connection
-#if input('Ambiente: \n 1 - Garagem In 2 - SageMaker \n') == '1':
-# con=create_context(
-# host="10.225.1.30",
-# username= 'thommic', #username=input('Usuário Teradata:'),
-# password='Sofi2606', #password=getpass('Senha:'),
-# Logmech='LDAP'
-
-
 
 
 class InferenceModel():
@@ -55,13 +50,23 @@ class InferenceModel():
     
     """
 
-    def __init__(self, cfg_file_path: str): 
-        self.__cfg_file = cfg_file_path         
-        self.__rfe_agent = RFE(*self.__load_config())    
+    __rfe_agent: RFE
+    __engines_enum: EnumMeta
+    __data_sources_group: DataSourceGroup
+
+
+    def __init__(self, cfg_file_path: str):
+        params_rfe, engines_params, data_srcs_params = self.__load_config(cfg_file_path)        
+        self.__rfe_agent = RFE(params_rfe)    
+        self.__data_sources_group = DataSourceGroup(data_srcs_params, {'physical_name': params_rfe['public_tbl'], 
+                                                                    'technology': params_rfe['public_tbl_eng'],
+                                                                    'schema': params_rfe['public_tbl_schm'],
+                                                                    'public_tbl_db': params_rfe['public_tbl_db']}, engines_params)
+        self.__engines_enum = self.__data_sources_group.get_engines_enum()
 
 
     #Reads YAML config file
-    def __load_config(self) -> Tuple[Dict[str, str], Dict[str, str]]:
+    def __load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
             Loads configuration file containing multiple module parameters.
 
@@ -69,8 +74,7 @@ class InferenceModel():
                 Dict(str, str]: Dictionary with the literal parameters.
         """
         
-        file_name = self.__cfg_file
-        with open(file_name) as file:
+        with open(cfg_file_name) as file:
             yaml_config= yaml.load(file, Loader=yaml.FullLoader) 
             if "parameters" not in yaml_config.keys():
                 raise ValueError("The node 'parameters' is required in the config file")
@@ -98,19 +102,18 @@ class InferenceModel():
                 },
                 "engines": {
                     str: {
-                        "conn_vars": [dict]
+                        "conn_vars": dict
                     }
                 }, 
                 "datasources": {
                     str: {
                         'alias': str,
-                        'sources': [{
+                        'source': {
                             'technology': str, 
                             'schema': str, 
                             'physical_name': str, 
-                            Optional('remove_fields'): Or(None, [str]),
-                            Optional('qry_override'): Or(None, str) 
-                        }]
+                            Optional('remove_fields'): Or(None, [str])
+                        }
                     }
                 }
                 #Optional ("variaveis"): And(dict),
@@ -131,29 +134,47 @@ class InferenceModel():
     #Validate config file
     def __validate_config(self):
         pass
-    
+
     #Recursive feature elimination implementation
     def rfe(self):        
-        #Uses the RFE object instantiated during initialization of the class
+        #Uses the RFE object instantiated during the class's initialization
         rfe_obj = self.__rfe_agent
 
-        #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
-        rfe_obj.narrow_down_candidates_univar()
+        #Get df_public from DB and store in memory
+        df_public = self.__get_public_df()
 
-        #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
-        rfe_obj.choose_top_features_multivar() 
-        
-        #Consolidates all the chosen variables into a single dataframe
-        rfe_obj.get_df_rfe()
+        #Get df_public index to use later
+        public_idx = df_public.ds_data['PK_RIZNUMDOC_XX'].to_list()
 
-        self.__rfe = rfe_obj
+        #Loops through each data source specified on the config file        
+        for current_ds in self.__data_sources_group:
+            #Trigger DB join pub + book
+            joined_df = self.__data_sources_group.get_data_filtered_public(current_ds, rfe_obj.max_n_feats_join, rfe_obj.mob)
+
+
+            #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
+            rfe_obj.narrow_down_candidates_univar(df_public, data_sources_group)
+
+            #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
+            rfe_obj.choose_top_features_multivar() 
+            
+            #Consolidates all the chosen variables into a single dataframe
+            rfe_obj.get_best_feats_df()
+
+        #Runs the RFE() algorithm against the best set of features identified in previous steps
+        rfe_obj.get_rfe_results()
+
         pass
 
+ 
 
     #Reevaluates features discardaded during the previous analysis step
     def eval_data_sources(self): 
         pass
 
+    def __get_public_df(self) -> DataSource: 
+        return self.__data_sources_group.get_df_public()
+    
     #Retrocompatibility
     def get_features (self):
         return self.eval_data_sources()
