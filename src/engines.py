@@ -26,14 +26,14 @@ class Engine():
         
         return Enum('EnginesEnum', engines_dict)
     
-
-    def get_engines_enum(self):
-        return self.engines_enum
     
-    @classmethod
-    def get_engine_instance(cls, type: str) -> EnumMeta:
-        return self.engines_enum.__getitem__(type).value(self.__engines_config) #type: ignore
 
+    def get_engine_instance(self, type: str) :#-> EnumMeta:
+        return self.engines_enum.__getitem__(type).value #type: ignore
+
+
+    def execute_query(self, query: str):
+        ...
 
     def get_db_connection(self):
         pass
@@ -86,5 +86,15 @@ if __name__ == "__main__":
     engines_cfg = {'TERADATA': {'conn_vars': {'host': '10.225.1.30', 'username': None, 'password': None, 'logmech': 'LAPD'}}, 'HADOOP': {'conn_vars': {'host': None, 'database': None, 'user': None, 'password': None, 'datahub': None}}}
     #engine_cfg = {'conn_vars': {'host': '10.225.1.30', 'username': None, 'password': None, 'logmech': 'LAPD'}}
     te = Engine(engines_cfg)
-    enum = te.get_engines_enum()
-    print(enum.__getitem__('HADOOP').value)
+    #enum = te.get_engines_enum()
+    #print(type(enum))
+
+    #print(enum.__getitem__('HADOOP').value)
+
+    tb = Engine(engines_cfg).get_engine_instance('TERADATA')
+
+    print(type(te))
+    print(te)
+
+    print(type(tb))
+    print(tb)

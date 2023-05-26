@@ -29,6 +29,7 @@ class DataSourceGroup():
 
     def __init__(self, ds_config: Dict, pub_ds_config: Dict, engines_config: Dict):
         self.data_sources = self.__init_data_sources(ds_config)
+        self.__engines_config = engines_config
         self.engines_enum = self.__init_engines(engines_config)
         self.df_public = self.__init_public_df(pub_ds_config)
 
@@ -42,7 +43,10 @@ class DataSourceGroup():
         data_sources_lst = []
 
         for ds_info in ds_config:
-            data_sources_lst.append(DataSource(ds_config[ds_info], self.engines_enum))
+            config_dict = ds_config[ds_info]
+            ds_technology = config_dict['technology']
+
+            data_sources_lst.append(DataSource(config_dict, Engine(self.__engines_config).get_engine_instance(ds_technology)))
 
         return data_sources_lst
 
@@ -58,13 +62,14 @@ class DataSourceGroup():
                                     'remove_fields': [],
                                     'override_qry': None}]
         
-        
+
                                     
         return DataSource(pub_ds_dict, self.engines_enum)
 
 
     def __init_engines(self, eng_params: dict) -> EnumMeta:
-        return Engine(eng_params).get_engines_enum()
+        return Engine(eng_params).engines_enum
+    
 
     #Return the public data
     def get_df_public(self) -> DataSource:
@@ -76,13 +81,11 @@ class DataSourceGroup():
 
 
     #Executes a join between a given datasource and the public in analysis
-    def get_data_filtered_public(self, current_ds: DataSource, max_batch_size: int, mob: int) -> pd.DataFrame:
+    def get_data_join_public(self, current_ds: DataSource, mob: int) -> None:
         #Triggers a join operation between the public table and the datasource table
-        current_ds.left_join_public_tb(self.df_public, mob)
+        df_metadata = current_ds.left_join_public_tb(self.df_public, mob)
 
 
-        
-        return pd.DataFrame()
     
     #Asks the current datasource for the next batch of data
     df_batch = current_ds.read_batch_of_data(max_batch_size)
@@ -121,19 +124,16 @@ class DataSource():
     ds_columns: List[str]
 
 
-    def __init__(self, ds_info: dict, engine_enum: EnumMeta) -> None:
+    def __init__(self, ds_info: dict, ds_engine: Engine) -> None:
         self.__alias = ds_info['alias']
         self.__technology = ds_info['source']['technology']
         self.__schema = ds_info['source']['schema']
         self.__physical_name = ds_info['source']['physical_name']
         self.__remove_fields = ds_info['source']['remove_fields']
         self.__qry_override = ds_info['source']['qry_override']
-        self.__engine = engine_enum.__getitem__(self.__source['technology']).value 
+        self.__engine = ds_engine
         self.__ds_columns = self.ds_data.columns.to_list()
 
-
-    def set_engine(self, engine_enum: EnumMeta) -> Engine:
-         engine_enum.__getitem__(source['technology']).value
 
 
     #Read data from DBMS
@@ -161,7 +161,7 @@ class DataSource():
                     AND A.PK_TPP_XX = B.PK_TPP_XX
             ) WITH DATA PRIMARY INDEX (PK_RIZNUMDOC_XX,PK_DATREF_XX)
         """
-        self.__engine().execute_query(query)
+        self.__engine.execute_query(query)
 
 
     def get_total_batches(self, chunk_size: int):

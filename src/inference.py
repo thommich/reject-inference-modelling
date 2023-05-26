@@ -149,7 +149,7 @@ class InferenceModel():
         #Loops through each data source specified on the config file        
         for current_ds in self.__data_sources_group:
             #Trigger DB join pub + book
-            joined_df = self.__data_sources_group.get_data_filtered_public(current_ds, rfe_obj.max_n_feats_join, rfe_obj.mob)
+            joined_df = self.__data_sources_group.get_data_join_public(current_ds, rfe_obj.mob)
 
 
             #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
