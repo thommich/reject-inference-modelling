@@ -50,23 +50,23 @@ class InferenceModel():
     
     """
 
-    __rfe_agent: RFE
-    __engines_enum: EnumMeta
-    __data_sources_group: DataSourceGroup
+    _rfe_agent: RFE
+    _engines_enum: EnumMeta
+    _data_sources_group: DataSourceGroup
 
 
     def __init__(self, cfg_file_path: str):
-        params_rfe, engines_params, data_srcs_params = self.__load_config(cfg_file_path)        
-        self.__rfe_agent = RFE(params_rfe)    
-        self.__data_sources_group = DataSourceGroup(data_srcs_params, {'physical_name': params_rfe['public_tbl'], 
-                                                                    'technology': params_rfe['public_tbl_eng'],
-                                                                    'schema': params_rfe['public_tbl_schm'],
-                                                                    'public_tbl_db': params_rfe['public_tbl_db']}, engines_params)
-        self.__engines_enum = self.__data_sources_group.get_engines_enum()
+        params_rfe, engines_params, data_srcs_params = self._load_config(cfg_file_path)        
+        self._rfe_agent = RFE(params_rfe)    
+        self._data_sources_group = DataSourceGroup(data_srcs_params, {'physical_name': params_rfe['audience_tbl'], 
+                                                                    'technology': params_rfe['audience_tbl_eng'],
+                                                                    'schema': params_rfe['audience_tbl_schm'],
+                                                                    'audience_tbl_db': params_rfe['audience_tbl_db']}, engines_params)
+        self._engines_enum = self._data_sources_group.get_engines_enum()
 
 
     #Reads YAML config file
-    def __load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
+    def _load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
             Loads configuration file containing multiple module parameters.
 
@@ -89,10 +89,10 @@ class InferenceModel():
                 {
                 "parameters": {
                     "description": str, 
-                    "public_tbl": str,
-                    "public_tbl_eng": str,
-                    "public_tbl_schm": str,
-                    "public_tbl_db": str,
+                    "audience_tbl": str,
+                    "audience_tbl_eng": str,
+                    "audience_tbl_schm": str,
+                    "audience_tbl_db": str,
                     "mob": int,
                     "approved_column": str, 
                     "approved_value": Or(str, int),
@@ -132,49 +132,41 @@ class InferenceModel():
         return parameters, engines_params, data_srcs_params
 
     #Validate config file
-    def __validate_config(self):
+    def _validate_config(self):
         pass
 
     #Recursive feature elimination implementation
     def rfe(self):        
         #Uses the RFE object instantiated during the class's initialization
-        rfe_obj = self.__rfe_agent
+        rfe_obj = self._rfe_agent
 
-        #Get df_public from DB and store in memory
-        df_public = self.__get_public_df()
+        #Get df_audience from DB and store in memory
+        df_audience = self._data_sources_group.get_df_audience()
 
-        #Get df_public index to use later
-        public_idx = df_public.ds_data['PK_RIZNUMDOC_XX'].to_list()
+        #Get df_audience index to use later
+        #audience_idx = df_audience.ds_data['PK_RIZNUMDOC_XX'].to_list()
 
         #Loops through each data source specified on the config file        
-        for current_ds in self.__data_sources_group:
-            #Trigger DB join pub + book
-            joined_df = self.__data_sources_group.get_data_join_public(current_ds, rfe_obj.mob)
-
-
+        for current_ds in self._data_sources_group:
             #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
-            rfe_obj.narrow_down_candidates_univar(df_public, data_sources_group)
+            rfe_obj.narrow_down_feat_candidates_univar(df_audience, current_ds)
 
             #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
-            rfe_obj.choose_top_features_multivar() 
+            rfe_obj.choose_top_features_multivar(current_ds) 
             
-            #Consolidates all the chosen variables into a single dataframe
-            rfe_obj.get_best_feats_df()
+        #Consolidates all the chosen variables into a single dataframe
+        #rfe_obj.get_best_feats_df()
 
         #Runs the RFE() algorithm against the best set of features identified in previous steps
-        rfe_obj.get_rfe_results()
+        #rfe_obj.get_rfe_results()
 
         pass
 
- 
 
     #Reevaluates features discardaded during the previous analysis step
     def eval_data_sources(self): 
-        pass
+        pass 
 
-    def __get_public_df(self) -> DataSource: 
-        return self.__data_sources_group.get_df_public()
-    
     #Retrocompatibility
     def get_features (self):
         return self.eval_data_sources()

@@ -1,15 +1,16 @@
 parameters:
   description: 'Modelo de Inferência de Negados' 
-  public_tbl: 'TMS_PUB_IMOB_INF'
-  public_tbl_eng: 'TERADATA'
-  public_tbl_schm: 'MESB_T'
-  public_tbl_db: 'DENIED_INFERENCE_PUB'
+  audience_tbl: 'TMS_PUB_IMOB_INF'
+  audience_tbl_eng: 'TERADATA'
+  audience_tbl_schm: 'MESB_T'
+  audience_tbl_db: 'DENIED_INFERENCE_PUB'
   mob: 12
   approved_column: 'FLG_CNTRTC'
   approved_value: 1
   target_column: 'BAD_90_12' 
   remove_bc: False
   n_features: 25
+  book_cols_batch_size: 200
 
 engines:
   TERADATA:
@@ -17,7 +18,7 @@ engines:
       host: "10.225.1.30"
       username: null
       password: null
-      logmech: 'LAPD'
+      logmech: 'LADP'
   HADOOP:
     conn_vars:
       host: null    

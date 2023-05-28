@@ -5,10 +5,14 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Dict, Tuple, List, Any, Union
 
+import gc
 import pandas as pd
 from datasources import DataSourceGroup, DataSource
 from engines import Engine
+import fastparquet as fp
 
+from sklearn.model_selection import train_test_split
+from lightgbm import LGBMClassifier
 
 class RFE():
     """
@@ -21,58 +25,112 @@ class RFE():
             alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    __parameters: Dict[Any, Any]
+    _parameters: Dict[Any, Any]
     approved_column: str
     approved_value: Union[int, str]
     target_column: str 
     remove_bc: bool
     n_features: int
+    n_features_1st_eval: int
     max_n_feats_join: int
-    mob: int
+    _mob: int
 
 
-    def __init__( self, parameters: Dict) -> None:
-        self.__parameters = parameters       
+    def __init__(self, parameters: Dict) -> None:
+        self._parameters = parameters
+        self._book_cols_batch_size = parameters['book_cols_batch_size']
+        self._mob = parameters['mob']
+        self.target_column
+        self.approved_column
+        self.approved_value
+        self.n_features_1st_eval
+
 
 
     #Select the 'n_features_batch' best feature candidates from each data source (univariate analysis)
-    def narrow_down_candidates_univar(self, df_public: pd.DataFrame, data_sources_group: DataSourceGroup):
+    # based on the capacity to discriminate those individuals with observed performance against the ones
+    # who have been denied. Here, higher default rates are expected for inferred/denied individuals when
+    # in comparision to the other group.
+    def narrow_down_feat_candidates_univar(self, df_audience: DataSource, data_source: DataSource) -> None:
+
+        #Trigger DB join pub + book
+        data_source.left_join_audience_tb(df_audience, self._mob)
+
+        ##INITIALIZE LOOP VARIABLES
+        #Calculate total number of batches and start reading data from the DB
+        num_total_batches = len(data_source.get_columns()) - len(df_audience.get_columns())/self._book_cols_batch_size
+
+        #Initialize list to hold intermediate/final results
+        sorted_results = []
+
+        #formats the name of the parquet file that will hold the persisted data
+        parquet_file_path = '/temp'
+        parquet_file = ''.join([parquet_file_path, data_source.alias, '.parquet'])
+
+        for i in tqdm(range(num_total_batches), leave=False):
+            ##PREPARE TRAIN AND TEST DATA
+            #Read batch of data from DBMS
+            data_source.read_batch_of_data(i, self._book_cols_batch_size)
+            df = data_source.data_batch
+            df['PK_DATREF_XX'] = pd.to_datetime(df['PK_DATREF_XX'])
+            df['PK_DATVER_XX'] = pd.to_datetime(df['PK_DATVER_XX'])
+
+            #Filter analytical columns
+            analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in df_audience.columns]
+            #Add target and approved columns
+            df = df[analytical_vars + [self.approved_column, self.target_column]]
+
+            #Creates a boolean series to identify "approved" individuals using the "approved_column" parameter 
+            df[self.approved_column] = df[self.approved_column].astype(str) 
+            approved = df[self.approved_column].str.lstrip().str.rstrip() == str(self.approved_value)
+            data=df[approved]
+
+            #Creates train and test datasets
+            df_train, df_test = train_test_split(data, test_size=0.2, random_state=42) 
+            df_neg=df[~approved]
 
 
-            #Estimate total number of batches and start reading data from the DB
-            num_total_batches = ds.get_total_batches(chunk_size)
-            for i in tqdm(range(num_total_batches), leave=False):
-                #Read batch of data from DBMS
-                data_batch = ds.read_batch(chunk_size)
+            ##INSTANTIATES A MODEL AND LOOPS THROUGH EVERY FEATURE FITTING, TRAINING AND EVALUATING
+            #Instantiates a LightGBM classifier
+            clf = LGBMClassifier(randon_state=23, n_estimators=1, max_depth=5, num_leaves = 25) 
+            pred = {'inf_treino': [], 'inf_sem_perf': []}
+            
 
-                #Transform data
-                #Train model 
-                #Obtain feature importances
-                #Merge results with current best candidates, sort in desc order, keep only top n_features
+            # Loop through every feature and calculate train and inferred predictions 
+            for feat in tqdm(analytical_vars, leave=False, desc=' '.join(['Avaliando as variáveis de ', data_source.alias])): 
+                clf.fit(df_train[feat].to_numpy().reshape(-1, 1), df_train[self.target_column])
+                
+                pred_treino = clf.predict_proba(df_test[feat].to_numpy().reshape(-1, 1))[:, 1].mean() 
+                pred_sem_perf = clf.predict_proba(df_neg[feat].to_numpy().reshape(-1, 1))[:, 1].mean()
+                
+                pred['inf_treino'].append(pred_treino) 
+                pred['inf_sem_perf'].append(pred_sem_perf)
 
-        #Write best candidates to .parquet file
-        pass
+            results = pd.concat((pd.DataFrame({'feature': analytical_vars}), pd.DataFrame(pred)), axis = 1)
+            results['diff'] = results['inf_sem_perf'] / (results['inf_treino'] + results['inf_sem_perf'])
 
-            # df_impfeat = pd.read_parquet('./model_files/' + file_name, columns=['PK_RIZNUMDOC_XX'] + vars_list[i*vars_batch_n: (1+1)*vars_batch_n])
-            # df_impfeat.columns 
-            # df_impfeat.columns.str.upper() 
-            # df_impfeat = df_impfeat[[col for col in df_impfeat.columns.str.upper().to_list() if col not in ['FLG_CNTRTC']]]
-            # df_impfeat = df_impfeat[df_impfeat['PK_RIZNUMDOC_XX'].isin(idx_public)]
-            # df_impfeat.set_index(['PK_RIZNUMDOC_XX'], inplace=True)
+            
 
-            # df_pub = self.df_public[self.df_public['PK_RIZNUMDOC_XX'].isin(idx_public)] 
-            # df_pub.set_index(['PK_RIZNUMDOC_xx'], inplace=True)
-            # setattr(self, 'merged_df', pd.merge(df_impfeat, df_pub, left_index=True, right_index=True))
+            if not sorted_results:
+                sorted_results = results.sort_values(by = 'diff', ascending = False).iloc[:self.n_features_1st_eval]['features'].to_list()
+                fp.write(parquet_file, df, compression='SNAPPY')
+            else:
+                concat_dfs = pd.concat([sorted_results, results]) #type: ignore            
+                data_source.candidate_features = concat_dfs.sort_values(by = 'diff', ascending = False).iloc[:self.n_features_1st_eval]['features'].to_list()
+                fp.write(parquet_file, df, compression='SNAPPY', append=True)
+                #current_top_candidates = fp.ParquetFile(parquet_file).columns
+                #DECIDED TO KEEP ALL FEATURES ON THE PARQUET FILE SINCE IT CAN BE REUSED FOR LATER EXPERIMENTS
 
-            # del df_impfeat
-            # del df_pub
-            # gc.collect()
-            # #print(self.merged_df.head())
-            # imp_feat_batch = self._get_important_features (self.merged_df, vars list, 'Avaliando variáveis do(a) setattr(self, 'df feats eval book', pd.concat([getattr(self, 'df_feats_eval_book'), imp_feat_batch])) +bk_name)
+        return
 
+
+    def choose_top_features_multivar(self, data_source: DataSource) -> None:
+        
+        return
     
     def get_rfe_df(self): # -> List[str]: 
         pass
     
     def plot_results(self): 
         pass
+

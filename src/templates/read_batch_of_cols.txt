@@ -1,0 +1,4 @@
+SELECT {% for col in columns_list%}
+    A.{{col}}, {% end for%}
+    A.{{primary_key}}
+FROM {{table_schema}}.{{table_name}} as A;

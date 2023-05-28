@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum, EnumMeta
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, List, Any, Union
 from dataclasses import dataclass
 from teradataml.context.context import create_context, remove_context
 from teradataml import DataFrame, fastexport
@@ -11,6 +11,7 @@ import yaml
 import pandas as pd
 import math
 from engines import Engine
+from jinja2 import Environment, FileSystemLoader, Template
 
 
 class DataSourceGroup():
@@ -23,15 +24,17 @@ class DataSourceGroup():
     """
 
     data_sources: List[DataSource]
-    df_public: DataSource
+    df_audience: DataSource
     engines_enum: EnumMeta
 
 
     def __init__(self, ds_config: Dict, pub_ds_config: Dict, engines_config: Dict):
+        self._engines_config = engines_config
+        self._pub_ds_config = pub_ds_config
+        self._ds_config = ds_config
         self.data_sources = self.__init_data_sources(ds_config)
-        self.__engines_config = engines_config
-        self.engines_enum = self.__init_engines(engines_config)
-        self.df_public = self.__init_public_df(pub_ds_config)
+        self.engines_enum = self.__init_engines_enum(engines_config)
+        self.df_audience = self.__init_audience_df(pub_ds_config)
 
 
     def __iter__(self):
@@ -46,13 +49,13 @@ class DataSourceGroup():
             config_dict = ds_config[ds_info]
             ds_technology = config_dict['technology']
 
-            data_sources_lst.append(DataSource(config_dict, Engine(self.__engines_config).get_engine_instance(ds_technology)))
+            data_sources_lst.append(DataSource(config_dict, Engine(self._engines_config).get_engine_instance(ds_technology)))
 
         return data_sources_lst
 
 
-    # Returns the entity containing data about the public used for modelling
-    def __init_public_df(self, pub_ds_config: Dict) -> DataSource:
+    # Returns the entity containing data about the audience used for modelling
+    def __init_audience_df(self, pub_ds_config: Dict) -> DataSource:
         pub_ds_dict = {}
         
         pub_ds_dict['alias'] = 'PUB'
@@ -61,45 +64,33 @@ class DataSourceGroup():
                                     'physical_name': pub_ds_config['physical_name'],
                                     'remove_fields': [],
                                     'override_qry': None}]
-        
-
                                     
-        return DataSource(pub_ds_dict, self.engines_enum)
+        return DataSource(pub_ds_dict, self.get_engines_enum().get_engine_instance(pub_ds_dict['technology']))
 
 
-    def __init_engines(self, eng_params: dict) -> EnumMeta:
+    #Initializes the possible engines Enumeration
+    def __init_engines_enum(self, eng_params: dict) -> EnumMeta:
         return Engine(eng_params).engines_enum
     
 
-    #Return the public data
-    def get_df_public(self) -> DataSource:
-        return self.df_public       
+    #Return the audience data
+    def get_df_audience(self) -> DataSource:
+        return self.df_audience       
     
 
+    #Returns the engines enumeration
     def get_engines_enum(self) -> EnumMeta:
         return self.engines_enum
 
 
-    #Executes a join between a given datasource and the public in analysis
-    def get_data_join_public(self, current_ds: DataSource, mob: int) -> None:
-        #Triggers a join operation between the public table and the datasource table
-        df_metadata = current_ds.left_join_public_tb(self.df_public, mob)
-
-
-    
-    #Asks the current datasource for the next batch of data
-    df_batch = current_ds.read_batch_of_data(max_batch_size)
-        
-        
-
-    #Return list with all datasources
+    #Returns the list with all the datasources
     def get_ds_group(self, ds_config: str) -> List[DataSource]:
         return self.data_sources
 
 
     #Returns a consolidated dataframe with the top variables selected from each source through the RFE algorithm
     def get_rfe_df(self, ds_config: str) -> DataSource:
-        return DataSource({})
+        return DataSource({}, Engine({'':{}}))
 
 
 
@@ -117,63 +108,108 @@ class DataSource():
         alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    __alias: str
-    __source: Dict[str , str]
-    __engine: Engine
-    ds_data: pd.DataFrame
-    ds_columns: List[str]
+    alias: str
+    _technology: str
+    _schema: str
+    _physical_name: str
+    _remove_fields: List[Union[str,None]]
+    _qry_override: str
+    _engine: Engine
+    columns: List[str]
+    data_batch: pd.DataFrame
+    candidate_features: List[str]
+    top_chosen_features: List[str]
 
 
     def __init__(self, ds_info: dict, ds_engine: Engine) -> None:
-        self.__alias = ds_info['alias']
-        self.__technology = ds_info['source']['technology']
-        self.__schema = ds_info['source']['schema']
-        self.__physical_name = ds_info['source']['physical_name']
-        self.__remove_fields = ds_info['source']['remove_fields']
-        self.__qry_override = ds_info['source']['qry_override']
-        self.__engine = ds_engine
-        self.__ds_columns = self.ds_data.columns.to_list()
+        self.alias = ds_info['alias']
+        self._technology = ds_info['source']['technology']
+        self._schema = ds_info['source']['schema']
+        self._physical_name = ds_info['source']['physical_name']
+        self._remove_fields = ds_info['source']['remove_fields']
+        self._qry_override = ds_info['source']['qry_override']
+        self._engine = ds_engine
+        self.shape = self._engine.get_table_shape(self.get_schema(), self.get_physical_name())
+        self._columns = self._engine.get_table_columns(self.get_schema(), self.get_physical_name())
+        self.data_batch = pd.DataFrame()
+        self.candidate_features = []
+        self.top_chosen_features = []
+
+    def get_schema(self):
+        return self._schema
 
 
+    def get_physical_name(self):
+        return self._physical_name
 
-    #Read data from DBMS
-    def read_batch_of_data(self, batch_size: int):
-        self.ds_data = 
-        
-#df_impfeat = pd.read_parquet('./model_files/' + file_name, columns=['PK_RIZNUMDOC_XX'] + vars_list[i*vars_batch_n: (1+1)*vars_batch_n])
-    #Read data from DBMS
-    def read_from_src(self):
-        connection = get_db_connection(self.engine)
-        connection.execute()
-        pass
 
-    
+    def get_shape(self) -> tuple:
+        return self.shape
 
-    def left_join_public_tb(self, df_public: DataSource, mob: int) -> None:
+
+    def get_columns(self) -> List[str]:
+        return self.columns
+
+
+    def has_data(self) -> bool:
+        return True if hasattr(self, 'ds_data') else False
+
+
+    def left_join_audience_tb(self, df_audience: DataSource, mob: int) -> None:
         query = f"""
-            CREATE TABLE MESB_T.BASE_INFERENCIA_MLTOOLS_{self.__alias} AS (
+            CREATE TABLE {self._schema}.BASE_INFERENCIA_MLTOOLS_{self.alias} AS (
                 SELECT 
                     A.*
-                FROM {df_public.get_schema}.{df_public.get_physical_name()} AS B
-                LEFT JOIN {self.__schema}.{self.__physical_name} AS A
+                FROM {df_audience.get_schema()}.{df_audience.get_physical_name()} AS B
+                LEFT JOIN {self._schema}.{self._physical_name} AS A
                     ON A.PK_RIZNUMDOC_XX = B.RIZNUMDOC_XX
                     AND A.PK_DATREF_XX = ADD_MONTHS(B.PK_DATREF_XX, {mob})
                     AND A.PK_TPP_XX = B.PK_TPP_XX
             ) WITH DATA PRIMARY INDEX (PK_RIZNUMDOC_XX,PK_DATREF_XX)
         """
-        self.__engine.execute_query(query)
+        self._engine.execute_query(query)
 
 
-    def get_total_batches(self, chunk_size: int):
-    #    self.get_db_connection(self.engine, self.schema, self.database)
-        table_meta = DataFrame.from_table(in_schema(self.schema, self.database))
-        return math.ceil(len(table_meta.columns)/chunk_size)
+    #Read data from DBMS
+    def read_batch_of_data(self, index: int, batch_size: int) -> None:
+        columns_to_read = self.columns[index*batch_size: (index+1)*batch_size]
 
-    def get_schema(self):
-        return self.__schema
-    
-    def get_physical_name(self):
-        return self.__physical_name
+        env = Environment(loader=FileSystemLoader('/templates'))
+        query = env.get_template('read_batch_of_cols').render(columns_list=columns_to_read,
+                                                              table_schema = self._schema,
+                                                              table_name = self._physical_name,
+                                                              primary_key = 'PK_RIZNUMDOC_XX')
+        
+        try:
+            data_batch = self._engine.read_data_from_db(query)
+        except Exception as err:
+            raise err
+        
+        return data_batch
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class DataSourceEnum(Enum):
