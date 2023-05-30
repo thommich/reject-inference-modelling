@@ -23,6 +23,11 @@ class Engine():
         self._set_engines_enum(engines_config)
 
 
+    @classmethod
+    def get_engine_instance(cls, type: str) -> Engine:
+        return cls.engines_enum.__getitem__(type).value #type: ignore
+
+
     #Binds the engines parameters to a different instance of Engine each
     def _set_engines_enum(self, engines_config: Dict) -> None:
         engines_dict = {}        
@@ -32,10 +37,6 @@ class Engine():
         
         self.engines_enum = Enum('EnginesEnum', engines_dict)
     
-
-    def get_engine_instance(self, type: str) -> Engine:
-        return self.engines_enum.__getitem__(type).value #type: ignore
-
 
     @abstractmethod
     def get_db_connection(self):
@@ -52,7 +53,7 @@ class Engine():
         ...
 
     @abstractmethod
-    def read_data_from_db(self, query: str):
+    def read_data_from_db(self, query: str) -> pd.DataFrame:
         ...
 
     @abstractmethod

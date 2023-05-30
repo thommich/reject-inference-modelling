@@ -12,7 +12,7 @@ import pandas as pd
 import math
 from engines import Engine
 from jinja2 import Environment, FileSystemLoader, Template
-
+import fastparquet as fp
 
 class DataSourceGroup():
     """
@@ -23,9 +23,11 @@ class DataSourceGroup():
         ds_config: Dict[]
     """
 
-    data_sources: List[DataSource]
+    data_sources: Dict[str,DataSource]
     df_audience: DataSource
     engines_enum: EnumMeta
+    audience_pk: List[str]
+    current_ds: DataSource
 
 
     def __init__(self, ds_config: Dict, pub_ds_config: Dict, engines_config: Dict):
@@ -42,16 +44,18 @@ class DataSourceGroup():
 
 
     #Binds the data source parameters to a different instance of DataSource each
-    def __init_data_sources (self, ds_config: Dict) -> List [DataSource]:
-        data_sources_lst = []
+    def __init_data_sources (self, ds_config: Dict) -> Dict[str,DataSource]:
+        data_sources_dict = {}
 
         for ds_info in ds_config:
             config_dict = ds_config[ds_info]
             ds_technology = config_dict['technology']
 
-            data_sources_lst.append(DataSource(config_dict, Engine(self._engines_config).get_engine_instance(ds_technology)))
+            new_ds = DataSource(config_dict, Engine(self._engines_config).get_engine_instance(ds_technology))
 
-        return data_sources_lst
+            data_sources_dict[new_ds.alias] = new_ds
+
+        return data_sources_dict
 
 
     # Returns the entity containing data about the audience used for modelling
@@ -64,8 +68,15 @@ class DataSourceGroup():
                                     'physical_name': pub_ds_config['physical_name'],
                                     'remove_fields': [],
                                     'override_qry': None}]
-                                    
-        return DataSource(pub_ds_dict, self.get_engines_enum().get_engine_instance(pub_ds_dict['technology']))
+        
+        aud_ds = DataSource(pub_ds_dict, Engine.get_engine_instance(pub_ds_dict['technology']))
+        setattr(aud_ds, 'audience_pk', self._pub_ds_config['audience_pk'])
+
+        parquet_file_path = '/temp/PQ_DATA_SOURCE_'
+        parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
+        fp.write(parquet_file, aud_ds.data_batch, compression='SNAPPY', append=True)
+
+        return aud_ds
 
 
     #Initializes the possible engines Enumeration
@@ -78,13 +89,27 @@ class DataSourceGroup():
         return self.df_audience       
     
 
+    def get_data_batch(self, columns_to_read: List[str]) -> pd.DataFrame:
+        data_source: DataSource = getattr(self, 'current_ds')
+        
+        df = data_source.read_data_batch(columns_to_read, self.audience_pk)
+
+        df['PK_DATREF_XX'] = pd.to_datetime(df['PK_DATREF_XX'])
+        df['PK_DATVER_XX'] = pd.to_datetime(df['PK_DATVER_XX'])
+
+        return df
+
+
+    def left_join_audience_tb(self, data_source: DataSource, mob: int) -> None:
+        return data_source.left_join_audience_tb(self.df_audience, mob)
+
     #Returns the engines enumeration
     def get_engines_enum(self) -> EnumMeta:
         return self.engines_enum
 
 
     #Returns the list with all the datasources
-    def get_ds_group(self, ds_config: str) -> List[DataSource]:
+    def get_ds_group(self, ds_config: str) -> Dict[str,DataSource]:
         return self.data_sources
 
 
@@ -118,7 +143,7 @@ class DataSource():
     columns: List[str]
     data_batch: pd.DataFrame
     candidate_features: List[str]
-    top_chosen_features: List[str]
+    top_rnkd_feats: List[str]
 
 
     def __init__(self, ds_info: dict, ds_engine: Engine) -> None:
@@ -133,7 +158,8 @@ class DataSource():
         self._columns = self._engine.get_table_columns(self.get_schema(), self.get_physical_name())
         self.data_batch = pd.DataFrame()
         self.candidate_features = []
-        self.top_chosen_features = []
+        self.top_rnkd_feats = []
+
 
     def get_schema(self):
         return self._schema
@@ -171,14 +197,13 @@ class DataSource():
 
 
     #Read data from DBMS
-    def read_batch_of_data(self, index: int, batch_size: int) -> None:
-        columns_to_read = self.columns[index*batch_size: (index+1)*batch_size]
+    def read_data_batch(self, columns_to_read: List[str], audience_pk: List[str]) -> pd.DataFrame:         
 
         env = Environment(loader=FileSystemLoader('/templates'))
         query = env.get_template('read_batch_of_cols').render(columns_list=columns_to_read,
                                                               table_schema = self._schema,
                                                               table_name = self._physical_name,
-                                                              primary_key = 'PK_RIZNUMDOC_XX')
+                                                              primary_key = audience_pk)
         
         try:
             data_batch = self._engine.read_data_from_db(query)

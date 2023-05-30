@@ -4,6 +4,7 @@ parameters:
   audience_tbl_eng: 'TERADATA'
   audience_tbl_schm: 'MESB_T'
   audience_tbl_db: 'DENIED_INFERENCE_PUB'
+  audience_pk: []
   mob: 12
   approved_column: 'FLG_CNTRTC'
   approved_value: 1

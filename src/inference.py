@@ -61,7 +61,8 @@ class InferenceModel():
         self._data_sources_group = DataSourceGroup(data_srcs_params, {'physical_name': params_rfe['audience_tbl'], 
                                                                     'technology': params_rfe['audience_tbl_eng'],
                                                                     'schema': params_rfe['audience_tbl_schm'],
-                                                                    'audience_tbl_db': params_rfe['audience_tbl_db']}, engines_params)
+                                                                    'audience_tbl_db': params_rfe['audience_tbl_db'],
+                                                                    'audience_pk': params_rfe['audience_pk']}, engines_params)
         self._engines_enum = self._data_sources_group.get_engines_enum()
 
 
@@ -139,20 +140,26 @@ class InferenceModel():
     def rfe(self):        
         #Uses the RFE object instantiated during the class's initialization
         rfe_obj = self._rfe_agent
+        ds_group = self._data_sources_group
+
+        data_sources = ds_group.data_sources
 
         #Get df_audience from DB and store in memory
-        df_audience = self._data_sources_group.get_df_audience()
-
-        #Get df_audience index to use later
-        #audience_idx = df_audience.ds_data['PK_RIZNUMDOC_XX'].to_list()
+        df_audience = ds_group.get_df_audience()
 
         #Loops through each data source specified on the config file        
-        for current_ds in self._data_sources_group:
+        for features_book in data_sources:
+            #Associates current data_source to a property of data_sources_group
+            setattr(ds_group, 'current_ds', features_book)
+            current_ds = data_sources[features_book]
+
             #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
-            rfe_obj.narrow_down_feat_candidates_univar(df_audience, current_ds)
+            candidate_features = rfe_obj.narrow_down_feat_candidates_univar(ds_group)
 
             #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
-            rfe_obj.choose_top_features_multivar(current_ds) 
+            top_features = rfe_obj.select_top_features_multivar(df_audience, candidate_features, current_ds.alias)
+            
+            data_sources[features_book].top_rnkd_feats = top_features
             
         #Consolidates all the chosen variables into a single dataframe
         #rfe_obj.get_best_feats_df()
