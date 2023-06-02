@@ -13,6 +13,7 @@ import math
 from engines import Engine
 from jinja2 import Environment, FileSystemLoader, Template
 import fastparquet as fp
+import copy
 
 class DataSourceGroup():
     """
@@ -23,20 +24,13 @@ class DataSourceGroup():
         ds_config: Dict[]
     """
 
-    data_sources: Dict[str,DataSource]
-    df_audience: DataSource
-    engines_enum: EnumMeta
-    audience_pk: List[str]
+
     current_ds: DataSource
+    df_rfe: pd.DataFrame
 
-
-    def __init__(self, ds_config: Dict, pub_ds_config: Dict, engines_config: Dict):
-        self._engines_config = engines_config
-        self._pub_ds_config = pub_ds_config
-        self._ds_config = ds_config
-        self.data_sources = self.__init_data_sources(ds_config)
-        self.engines_enum = self.__init_engines_enum(engines_config)
-        self.df_audience = self.__init_audience_df(pub_ds_config)
+    def __init__(self, ds_config: Dict, engines_config: Dict):
+        self.engines_enum: EnumMeta = self.__init_engines_enum(engines_config)
+        self._df_audience, self.data_sources = self.__init_data_sources(ds_config)
 
 
     def __iter__(self):
@@ -44,33 +38,27 @@ class DataSourceGroup():
 
 
     #Binds the data source parameters to a different instance of DataSource each
-    def __init_data_sources (self, ds_config: Dict) -> Dict[str,DataSource]:
-        data_sources_dict = {}
+    def __init_data_sources (self, ds_config: Dict) -> Tuple[DataSource,Dict[str,DataSource]]:
+        ds_audience = self.__init_audience_df(ds_config['AUDIENCE_TABLE'])
+        
+        data_sources_dict = {ds_audience.alias: ds_audience.ds_details}
+        
 
         for ds_info in ds_config:
             config_dict = ds_config[ds_info]
-            ds_technology = config_dict['technology']
+            ds_engine = config_dict['engine']
 
-            new_ds = DataSource(config_dict, Engine(self._engines_config).get_engine_instance(ds_technology))
+            new_ds = DataSource(config_dict, Engine.get_engine_instance(ds_engine))
 
             data_sources_dict[new_ds.alias] = new_ds
 
-        return data_sources_dict
+        return ds_audience, data_sources_dict
 
 
     # Returns the entity containing data about the audience used for modelling
     def __init_audience_df(self, pub_ds_config: Dict) -> DataSource:
-        pub_ds_dict = {}
-        
-        pub_ds_dict['alias'] = 'PUB'
-        pub_ds_dict['sources'] = [{'technology': pub_ds_config['technology'],
-                                    'schema': pub_ds_config['schema'],
-                                    'physical_name': pub_ds_config['physical_name'],
-                                    'remove_fields': [],
-                                    'override_qry': None}]
-        
-        aud_ds = DataSource(pub_ds_dict, Engine.get_engine_instance(pub_ds_dict['technology']))
-        setattr(aud_ds, 'audience_pk', self._pub_ds_config['audience_pk'])
+        aud_ds = DataSource(pub_ds_config, Engine.get_engine_instance(pub_ds_config['ds_details']['engine']))
+        setattr(aud_ds, 'audience_pk', pub_ds_config['audience_pk'])
 
         parquet_file_path = '/temp/PQ_DATA_SOURCE_'
         parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
@@ -86,13 +74,16 @@ class DataSourceGroup():
 
     #Return the audience data
     def get_df_audience(self) -> DataSource:
-        return self.df_audience       
+        return copy.deepcopy(self._df_audience)       
     
 
+    def get_audience_pk(self) -> List[str]:
+        return getattr(self.get_df_audience(), 'audience_pk')
+    
     def get_data_batch(self, columns_to_read: List[str]) -> pd.DataFrame:
         data_source: DataSource = getattr(self, 'current_ds')
         
-        df = data_source.read_data_batch(columns_to_read, self.audience_pk)
+        df = data_source.read_data_batch(columns_to_read, self.get_audience_pk())
 
         df['PK_DATREF_XX'] = pd.to_datetime(df['PK_DATREF_XX'])
         df['PK_DATVER_XX'] = pd.to_datetime(df['PK_DATVER_XX'])
@@ -101,7 +92,7 @@ class DataSourceGroup():
 
 
     def left_join_audience_tb(self, data_source: DataSource, mob: int) -> None:
-        return data_source.left_join_audience_tb(self.df_audience, mob)
+        return data_source.left_join_audience_tb(self.get_df_audience(), mob)
 
     #Returns the engines enumeration
     def get_engines_enum(self) -> EnumMeta:
@@ -114,8 +105,8 @@ class DataSourceGroup():
 
 
     #Returns a consolidated dataframe with the top variables selected from each source through the RFE algorithm
-    def get_rfe_df(self, ds_config: str) -> DataSource:
-        return DataSource({}, Engine({'':{}}))
+    def get_df_rfe(self) -> pd.DataFrame:
+        return copy.deepcopy(self.df_rfe)
 
 
 
@@ -133,12 +124,8 @@ class DataSource():
         alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    alias: str
-    _technology: str
-    _schema: str
-    _physical_name: str
-    _remove_fields: List[Union[str,None]]
-    _qry_override: str
+
+
     _engine: Engine
     columns: List[str]
     data_batch: pd.DataFrame
@@ -148,11 +135,12 @@ class DataSource():
 
     def __init__(self, ds_info: dict, ds_engine: Engine) -> None:
         self.alias = ds_info['alias']
-        self._technology = ds_info['source']['technology']
-        self._schema = ds_info['source']['schema']
-        self._physical_name = ds_info['source']['physical_name']
-        self._remove_fields = ds_info['source']['remove_fields']
-        self._qry_override = ds_info['source']['qry_override']
+        self.ds_details = ds_info['ds_details']
+        #self.engine = self.ds_details['engine']
+        self._schema = self.ds_details['schema']
+        self._physical_name = self.ds_details['physical_name']
+        self.fields_to_remove = self.ds_details['fields_to_remove']
+        #self._qry_override = ds_info['ds_details']['qry_override']
         self._engine = ds_engine
         self.shape = self._engine.get_table_shape(self.get_schema(), self.get_physical_name())
         self._columns = self._engine.get_table_columns(self.get_schema(), self.get_physical_name())

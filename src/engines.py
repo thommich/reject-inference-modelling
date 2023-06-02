@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Dict, Any, List, ClassVar, Union
+from typing import Dict, Any, List, Type, Union
 from teradataml import create_context, remove_context
 from teradataml.dataframe.dataframe import DataFrame, in_schema
 from getpass import getpass
@@ -16,11 +16,8 @@ class Engine():
 
     """
 
-    engines_enum: EnumMeta
-
     def __init__(self, engines_config: Dict[str,Dict[Any, Any]]):
-        self._engines_config = engines_config
-        self._set_engines_enum(engines_config)
+        self.engines_enum = self._set_engines_enum(engines_config)
 
 
     @classmethod
@@ -29,13 +26,13 @@ class Engine():
 
 
     #Binds the engines parameters to a different instance of Engine each
-    def _set_engines_enum(self, engines_config: Dict) -> None:
+    def _set_engines_enum(self, engines_config: Dict) -> EnumMeta:
         engines_dict = {}        
 
         for ec in engines_config:
             engines_dict[ec] = globals()[ec.capitalize() + 'Engine']
         
-        self.engines_enum = Enum('EnginesEnum', engines_dict)
+        return Enum('EnginesEnum', engines_dict)
     
 
     @abstractmethod
@@ -138,7 +135,7 @@ class TeradataEngine(Engine):
 
 
 class HadoopEngine(Engine):
-    raise NotImplementedError("Engine has still to be implemented")
+    pass
 
 
 if __name__ == "__main__":

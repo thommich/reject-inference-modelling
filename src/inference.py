@@ -1,6 +1,8 @@
 import yaml
 import os.path
-import gc, math, logging
+import gc
+import math
+import logging
 
 
 from rfe import RFE
@@ -17,56 +19,52 @@ from enum import EnumMeta
 from schema import And, Or, Optional, SchemaError, Schema
 from typing import Any
 
-#from tqdm import tqdm
-#from sklearn.model_selection import train_test_split
-#from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
-#from lightgbm import LGBMClassifier
-#import bifrost
-#from bifrost import Hadoop
-#pd.set_option('display.max_rows', None) 
-#pd.set_option('display.max_columns', None)
-#import pyarrow as pa
-#import seaborn as sns
-#import fastparquet as fp
-#import pyarrow.parquet as pq
-#import matplotlib.pyplot as plt
+# from tqdm import tqdm
+# from sklearn.model_selection import train_test_split
+# from sklearn.metrics import f1_score, precision_score, recall_score, classification_report, confusion_matrix
+# from lightgbm import LGBMClassifier
+# import bifrost
+# from bifrost import Hadoop
+# pd.set_option('display.max_rows', None)
+# pd.set_option('display.max_columns', None)
+# import pyarrow as pa
+# import seaborn as sns
+# import fastparquet as fp
+# import pyarrow.parquet as pq
+# import matplotlib.pyplot as plt
 
 # Create Logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Create stream handler
-handler = logging.StreamHandler() 
+handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
-handler.setFormatter(logging.Formatter('%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+handler.setFormatter(logging.Formatter(
+    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
 
-#Add handler to Logger
+# Add handler to Logger
 logger.addHandler(handler)
-
 
 
 class InferenceModel():
     """
-    
+
     """
 
     _rfe_agent: RFE
-    _engines_enum: EnumMeta
     _data_sources_group: DataSourceGroup
 
+    #SHOULD GO IN THE CONFIG
+    cut_threshold: int
+    max_br_reduction: float
 
     def __init__(self, cfg_file_path: str):
-        params_rfe, engines_params, data_srcs_params = self._load_config(cfg_file_path)        
-        self._rfe_agent = RFE(params_rfe)    
-        self._data_sources_group = DataSourceGroup(data_srcs_params, {'physical_name': params_rfe['audience_tbl'], 
-                                                                    'technology': params_rfe['audience_tbl_eng'],
-                                                                    'schema': params_rfe['audience_tbl_schm'],
-                                                                    'audience_tbl_db': params_rfe['audience_tbl_db'],
-                                                                    'audience_pk': params_rfe['audience_pk']}, engines_params)
-        self._engines_enum = self._data_sources_group.get_engines_enum()
+        params_rfe, engines_params, data_srcs_params = self._load_config(cfg_file_path)
+        self._rfe_agent = RFE(params_rfe)
+        self._data_sources_group = DataSourceGroup(data_srcs_params, engines_params)
 
-
-    #Reads YAML config file
+    # Reads YAML config file
     def _load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
             Loads configuration file containing multiple module parameters.
@@ -74,110 +72,131 @@ class InferenceModel():
             Returns:
                 Dict(str, str]: Dictionary with the literal parameters.
         """
-        
-        with open(cfg_file_name) as file:
-            yaml_config= yaml.load(file, Loader=yaml.FullLoader) 
-            if "parameters" not in yaml_config.keys():
-                raise ValueError("The node 'parameters' is required in the config file")
 
-            if "engines" not in yaml_config.keys(): 
-                raise ValueError("The node 'engines' is required in the config file")
+        with open(cfg_file_name) as file:
+            yaml_config = yaml.load(file, Loader=yaml.FullLoader)
+            if "parameters" not in yaml_config.keys():
+                raise ValueError(
+                    "The node 'parameters' is required in the config file")
+
+            if "engines" not in yaml_config.keys():
+                raise ValueError(
+                    "The node 'engines' is required in the config file")
 
             if "datasources" not in yaml_config.keys():
-                raise ValueError("The node 'datasources' is required in the config file")
+                raise ValueError(
+                    "The node 'datasources' is required in the config file")
 
             schema = Schema(
                 {
-                "parameters": {
-                    "description": str, 
-                    "audience_tbl": str,
-                    "audience_tbl_eng": str,
-                    "audience_tbl_schm": str,
-                    "audience_tbl_db": str,
-                    "mob": int,
-                    "approved_column": str, 
-                    "approved_value": Or(str, int),
-                    "target_column": str,
-                    "remove_bc": bool,
-                    "n_features": int
-                },
-                "engines": {
-                    str: {
-                        "conn_vars": dict
-                    }
-                }, 
-                "datasources": {
-                    str: {
-                        'alias': str,
-                        'source': {
-                            'technology': str, 
-                            'schema': str, 
-                            'physical_name': str, 
-                            Optional('remove_fields'): Or(None, [str])
+                    "parameters": {
+                        "description": str,
+                        "audience_tbl_name": str,
+                        "audience_tbl_eng": str,
+                        "audience_tbl_schema": str,
+                        "audience_tbl_db": str,
+                        "audience_tbl_pk": Or(str, [], [str]),
+                        "mob": int,
+                        "approved_column": str,
+                        "approved_value": Or(str, int),
+                        "target_column": str,
+                        "remove_subpop": Or(bool,None,[],[str]),
+                        "book_cols_batch_size": int,                        
+                        "n_features_1st_eval": int
+                    },
+                    "engines": {
+                        str: {
+                            "conn_vars": dict
+                        }
+                    },
+                    "datasources": {
+                        str: {
+                            'alias': str,
+                            'ds_details': {
+                                'engine': str,
+                                'schema': str,
+                                'physical_name': str,
+                                Optional('fields_to_remove'): Or(None, [str])
+                            }
                         }
                     }
-                }
-                #Optional ("variaveis"): And(dict),
-            })
-            
+                    # Optional ("variaveis"): And(dict),
+                })
 
             try:
                 schema.validate(yaml_config)
 
-                parameters = yaml_config.get("parameters") 
-                engines_params = yaml_config.get("engines") 
-                data_srcs_params = yaml_config.get("datasources") 
-            except SchemaError as e: 
-                raise ValueError(f"The config file is invalid! \nMessage: {e.args[0]}")
-                
+                parameters = yaml_config.get("parameters")
+                engines_params = yaml_config.get("engines")
+                data_srcs_params = yaml_config.get("datasources")
+            except SchemaError as e:
+                raise ValueError(
+                    f"The config file is invalid! \nMessage: {e.args[0]}")
+
         return parameters, engines_params, data_srcs_params
 
-    #Validate config file
+    # Validate config file
     def _validate_config(self):
         pass
 
-    #Recursive feature elimination implementation
-    def rfe(self):        
-        #Uses the RFE object instantiated during the class's initialization
+    # Recursive feature elimination implementation
+    def rfe(self):
+        # Uses the RFE object instantiated during the class's initialization
         rfe_obj = self._rfe_agent
         ds_group = self._data_sources_group
 
         data_sources = ds_group.data_sources
 
-        #Get df_audience from DB and store in memory
+        # Get df_audience from DB and store in memory
         df_audience = ds_group.get_df_audience()
 
-        #Loops through each data source specified on the config file        
+        # Loops through each data source specified on the config file
         for features_book in data_sources:
-            #Associates current data_source to a property of data_sources_group
+            # Associates current data_source to a property of data_sources_group
             setattr(ds_group, 'current_ds', features_book)
             current_ds = data_sources[features_book]
 
-            #Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
+            # Identify the 'n_candidate_features' best var candidates from each data source (univariate analysis)
             candidate_features = rfe_obj.narrow_down_feat_candidates_univar(ds_group)
 
-            #Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
+            # Identify the 'n_final_features' best var candidates from each data source (multivariate analysis)
             top_features = rfe_obj.select_top_features_multivar(df_audience, candidate_features, current_ds.alias)
-            
+
             data_sources[features_book].top_rnkd_feats = top_features
-            
-        #Consolidates all the chosen variables into a single dataframe
-        #rfe_obj.get_best_feats_df()
 
-        #Runs the RFE() algorithm against the best set of features identified in previous steps
-        #rfe_obj.get_rfe_results()
+        # Consolidates all the chosen variables into a single dataframe
+        df_rfe = rfe_obj.get_best_feats_df(ds_group)
 
-        pass
+        # Runs the RFE algorithm against the best set of features identified in previous steps
+        self.result = rfe_obj.recursive_feature_elimination(ds_group, df_rfe)
+
+        return
 
 
-    #Reevaluates features discardaded during the previous analysis step
-    def eval_data_sources(self): 
-        pass 
+    # Reevaluates features discardaded during the previous analysis step
+    def double_check_eliminated(self):
+        ds_group = self._data_sources_group
+        rfe_obj = self._rfe_agent
 
-    #Retrocompatibility
-    def get_features (self):
-        return self.eval_data_sources()
+        df_rfe = ds_group.get_df_rfe().copy()
+
+        features = [feat for feat in df_rfe.columns.to_list() if feat not in ds_group.get_df_audience().get_columns()]
+        
+        self.final_features = rfe_obj.eval_br_reduction(self.result, self.cut_threshold, self.max_br_reduction, features, ds_group)
+
+        return 
+
+
+    def final_results(self):
+        ds_group = self._data_sources_group
+        rfe_obj = self._rfe_agent
+
+        rfe_obj.get_final_results(ds_group)
+
+        
+    # Retrocompatibility
+    def get_features(self):
+        return self.double_check_eliminated()
     
-    
-    def get_results(self): 
-        pass
+    def get_results(self):
+        return self.final_results()

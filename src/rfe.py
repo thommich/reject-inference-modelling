@@ -3,16 +3,20 @@ from __future__ import annotations
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict, Tuple, List, Any, Union
+from typing import Dict, Tuple, List, Any, Union, Callable
 
 import gc
+import numpy as np
 import pandas as pd
 from datasources import DataSourceGroup, DataSource
-from engines import Engine
 import fastparquet as fp
 
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score, precision_score, recall_score
 from lightgbm import LGBMClassifier
+from functools import partial
+import copy
+import math
 
 class RFE():
     """
@@ -25,25 +29,15 @@ class RFE():
             alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    _parameters: Dict[Any, Any]
-    approved_column: str
-    approved_value: Union[int, str]
-    target_column: str 
-    remove_bc: bool
-    n_features: int
-    n_features_1st_eval: int
-    max_n_feats_join: int
-    _mob: int
-
-
     def __init__(self, parameters: Dict) -> None:
-        self._parameters = parameters
-        self._book_cols_batch_size = parameters['book_cols_batch_size']
-        self.mob = parameters['mob']
-        self.target_column
-        self.approved_column
-        self.approved_value
-        self.n_features_1st_eval
+        self.mob: int = parameters['mob']
+        self.approved_column: str = parameters['approved_column']
+        self.approved_value: Union[str,List,List[str]] = parameters['approved_value']
+        self.target_column: str = parameters['target_column']
+        self.remove_subpop: Union[bool, None, List, List[str]] = parameters['remove_subpop']
+        self._book_cols_batch_size: int = parameters['book_cols_batch_size']
+        self.n_features_1st_eval: int = parameters['n_features_1st_eval']
+        self.n_features_final: int = parameters['n_features_final']        
 
 
 
@@ -76,7 +70,7 @@ class RFE():
         df_train, df_test = train_test_split(data, test_size=0.2, random_state=42) 
         df_neg = df[~approved]
 
-        return df_train, df_test, df_neg #type: ignore
+        return df_train, df_test, df_neg
     
 
     def _univariate_evaluation(self, analytical_vars: List[str], ds: DataSource, df: pd.DataFrame) -> pd.DataFrame:
@@ -115,16 +109,8 @@ class RFE():
         n_features = pd.DataFrame(
             {'features': boost.feature_name(),
              'importance': clf.feature_importances_}
-        ).sort_values('importance', ascending = False).iloc[:self.n_features]['features'].values.tolist()
-        
-        # ##PREPARE TRAIN AND TEST DATA
-        # df_train, _, _ = self._prepare_training_datasets(df)
-
-        # #Now, a new model is trained with the final set of features
-        # clf = LGBMClassifier(randon_state=23, num_leaves = 40) 
-        # clf.fit(df_train[pre_selected_feats], df_train[self.target_column])
-        # boost = clf.booster_
-
+        ).sort_values('importance', ascending = False).iloc[:self.n_features_final]['features'].values.tolist()
+    
         return n_features
     
 
@@ -155,7 +141,7 @@ class RFE():
         data_source: DataSource = getattr(ds_group, 'current_ds')
         
         #Calculate total number of batches and start reading data from the DB
-        num_total_batches = len(data_source.get_columns()) - len(ds_group.get_df_audience().get_columns())/self._book_cols_batch_size
+        num_total_batches = math.ceil(len(data_source.get_columns()) - len(ds_group.get_df_audience().get_columns())/self._book_cols_batch_size)
 
         #Trigger DB join pub + book
         ds_group.left_join_audience_tb(data_source, self.mob)
@@ -170,7 +156,7 @@ class RFE():
             df = ds_group.get_data_batch(columns_to_read)
 
             #Filter analytical columns and add target and approved columns
-            analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.audience_pk]
+            analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.get_audience_pk()]
             df = df[analytical_vars + [self.approved_column, self.target_column]]
 
             ##INSTANTIATES A MODEL AND LOOPS THROUGH EVERY FEATURE FITTING, TRAINING AND EVALUATING
@@ -195,11 +181,11 @@ class RFE():
         return n_features
     
 
-    def get_rfe_df(self, ds_group: DataSourceGroup) -> pd.DataFrame: 
+    def get_best_feats_df(self, ds_group: DataSourceGroup) -> pd.DataFrame: 
         
-        audience = ds_group.df_audience
+        audience = ds_group.get_df_audience()
         
-        df_aud, _ = self._read_data_from_pqfile(audience.alias, audience.columns, ds_group.audience_pk)
+        df_aud, _ = self._read_data_from_pqfile(audience.alias, audience.columns.copy(), ds_group.get_audience_pk())
 
         df_rfe = df_aud
         for feature_book in ds_group.data_sources:
@@ -208,22 +194,192 @@ class RFE():
 
             df, _ = self._read_data_from_pqfile(ds.alias, ds.top_rnkd_feats, ds_group.get_df_audience().get_columns())
 
-            df_rfe = df_rfe.join(df.set_index(ds_group.audience_pk))
+            df_rfe = df_rfe.join(df.set_index(ds_group.get_audience_pk()))
         
+        #setattr(ds_group, 'df_rfe', df_rfe.copy())
+
         return df_rfe
 
 
-    def execute_rfe(self):
-        ...
+    def _get_prediction_results(self,
+                                func: Callable, 
+                                df_train: pd.DataFrame, 
+                                df_test: pd.DataFrame, 
+                                df_neg: pd.DataFrame) -> List[Union[float, str, List]]:
+        
+        # Generate x and y dataframes
+        X_train = df_train.apply(func).apply(pd.to_numeric)
+        y_train = df_train[self.target_column]
+        X_test = df_test.apply(func).apply(pd.to_numeric) 
+        y_test = df_test[self.target_column]
+        X_test_neg = df_neg.apply(func).apply(pd.to_numeric) 
+
+        # X_train = X_train
+        # X_test = X_test.apply(pd.to_numeric)
+        # X_test_neg = X_test_neg.apply(pd.to_numeric)
+
+        clf = LGBMClassifier(random_state=42, 
+                             n_estimators=20, 
+                             max_depth=10, 
+                             num_leaves = 128)
+        
+        clf.fit(X_train, y_train)
+
+        pred = clf.predict(X_test) 
+        pred_neg = clf.predict(X_test_neg)
+        
+        result = [  
+            f1_score(y_test, pred), 
+            y_test.mean(),
+            pred.mean(),
+            pred_neg.mean(), 
+            pred.mean() - pred_neg.mean()
+        ]
+        
+        return result
 
 
-    def plot_results(self): 
-        pass
+    def recursive_feature_elimination(self, ds_group: DataSourceGroup, df_rfe: pd.DataFrame) -> pd.DataFrame:
+        # Creates a list to append each step of elimitation
+        remove = []
+        
+        # Train, test split
+        df_train, df_test, df_neg = self._prepare_training_datasets(df_rfe)
 
-    def get_features(self): 
-        pass
+        # List of selected features
+        features = [feat for feat in df_rfe.columns.to_list() if feat not in ds_group.get_df_audience().get_columns()]
+
+        # Get first results with all features
+        filter_df = partial(pd.DataFrame.filter, items=features)
+        result = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
+        remove.append(result)
+
+        # Loop through all features and eliminates the ones that makes denieds worst then approved 
+        for j in tqdm(range(len(features)-1), desc='Executando a eliminação recursiva de features'):
+            # List to track results if we eliminate a feature
+            results = []
+
+            # Loop through remaining features to calculate results
+            for feature in features: # Initialize X with remaining features                
+                # Calculate results
+                filter_df = partial(pd.DataFrame.loc, [features.remove(feature)])
+                result = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
+                results.append(result)
+
+            # Create a DF with results and sort by diff
+            df_result = pd.DataFrame(results, columns=['feature', 'f1_score', 'br_real', 'br_inf', 'br_neg', 'diff' ])
+            df_result = df_result.sort_values('diff')
+                        
+            # Append eliminated feature on this round
+            remove.append(df_result.head(1).values.tolist()[0])
+            features.remove(list(df_result.head (1)['feature'])[0])
+            
+        # Consolidate features by elimitation order
+        result = pd.DataFrame(remove, columns=['feature', 'f1_score', 'br_real', 'br_inf', 'br_neg', 'diff'])
+        
+        return result
 
 
-    def get_final_results(self): 
-        pass
+    def plot_results(self, result: pd.DataFrame):
+        ax1 = result.br_neg.plot(label='BR Inferidos', color='r')
+        ax1.set_ylabel('Bad Rate')
+        ax2 = result.br_inf.plot(label='BR Contratos', color='g')
+
+        # Create another axis and plot f1_score
+        ax3 = ax1.twinx()
+        ax3.set_ylabel('F1 Score')
+        ax3. spines['right'].set_position(('axes', 1.0)) 
+        result.f1_score.plot(ax=ax3, color='b', label='F1 Score')
+
+        # Legend
+        ax1.legend(loc="lower left");
+        ax3.legend(loc="lower right");
+
+        return result
+
+
+    def eval_br_reduction(self, 
+                          prev_result: pd.DataFrame, 
+                          cut_threshold: int, 
+                          max_br_reduction: float, 
+                          features: List[str],
+                          ds_group: DataSourceGroup):
+        
+        # Features before/after cut_point
+        before_features = prev_result.iloc[1:cut_threshold+1].feature.to_list() 
+        after_features = [f for f in features if f not in before_features]
+
+        df_rfe = ds_group.get_df_rfe()[features]
+        df_train, df_test, df_neg = self._prepare_training_datasets(df_rfe)
+        
+        # Get results with only last features 
+        filter_df = partial(pd.DataFrame.loc, [after_features])
+        results = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
+        final_results = copy.deepcopy(results)   
+
+        for feature in tqdm(before_features, desc='Avaliando a perfomance das features removidas'):
+            # Calculate results
+            filter_df = partial(pd.DataFrame.loc, [after_features + [feature]])
+            result = self._get_prediction_results(filter_df, df_train, df_test, df_neg) 
+            results.append(result)
+            
+        # Create a DF with results and sort by br_neg
+        df_result = pd.DataFrame(results, columns=['feature', 'f1_score', 'br_real', 'br_inf', 'br_neg', 'diff'])
+        df_result = df_result.sort_values('br_neg', ascending=False)
+        
+        final_features = after_features
+
+        for feature in tqdm(df_result.drop(0).feature.to_list(), desc='Devolvendo as features que não impactam os negados'): 
+            # Calculate results
+            filter_df = partial(pd.DataFrame.loc, [final_features + [feature]])
+            result = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
+            
+            if result[4] > (1-max_br_reduction) * df_result.iloc[0].br_neg: 
+                final_features.append(feature)
+                final_results.append(result)
+
+        self.final_features = final_features
+        self.final_result = pd.DataFrame(final_results, columns=['feature', 'f1_score', 'br_real', 'br_inf', 'br_neg', 'diff'])
+        
+        return final_features 
+
+
+    def get_final_results(self, ds_group: DataSourceGroup):
+        df_rfe = ds_group.get_df_rfe()
+        
+        approved = df_rfe[self.approved_column].str.lstrip().str.rstrip() == str(self.approved_value)
+        df_ap = df_rfe[approved]
+
+        clf = LGBMClassifier(random_state=42, num_leaves = 40)
+        clf.fit(df_ap[self.final_features], df_ap[self.target_column])
+        threshold = self._get_threshold(df_ap[self.target_column], clf.predict_proba(df_ap[self.final_features])[:, 1])
+        
+        df_rfe = ds_group.get_df_rfe()
+        df_rfe['INF'] = (clf.predict_proba(ds_group.get_df_rfe()[self.final_features])[:, 1] > threshold) * 1
+        data = pd.DataFrame({
+                'Inf Contratos': df_rfe[approved].groupby('PK_DATREF_XX').INF.mean(),
+                'Contratos': df_rfe[approved].groupby('PK_DATREF_XX')[self.target_column].mean(), 
+                'Inf Inferidos': df_rfe[approved].groupby('PK_DATREF_XX').INF.mean()
+        })
+        data.plot()
+
+
+    def _get_threshold(self, y_true, y_prob): 
+        # initialize a list for score store
+        values = []
+
+        # iterate over 100 points and calculate scores
+        for t in range(0, 99, 1):
+            precision = precision_score(y_true, y_prob > t/100) 
+            recall = recall_score(y_true, y_prob > t/100)
+            
+            values.append([t/100, precision, recall])
+        
+        values = np.array(values) # to array
+        values = np.delete(values, np.where((values == 0))[0], axis=0) # removes precision and recall equal to zer
+        # pick point of minimum distance between precision and recall
+        cross_point = np.argmin(np.abs(values[:, 1] - values[:, 2]))
+        
+        return cross_point/100
+
     
