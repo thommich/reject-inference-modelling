@@ -15,7 +15,6 @@ from getpass import getpass
 
 from jinja2 import Environment, FileSystemLoader
 from typing import Tuple, Dict
-from enum import EnumMeta
 from schema import And, Or, Optional, SchemaError, Schema
 from typing import Any
 
@@ -39,6 +38,7 @@ logger.setLevel(logging.INFO)
 
 # Create stream handler
 handler = logging.StreamHandler()
+    
 handler.setLevel(logging.INFO)
 handler.setFormatter(logging.Formatter(
     '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
@@ -91,18 +91,14 @@ class InferenceModel():
                 {
                     "parameters": {
                         "description": str,
-                        "audience_tbl_name": str,
-                        "audience_tbl_eng": str,
-                        "audience_tbl_schema": str,
-                        "audience_tbl_db": str,
-                        "audience_tbl_pk": Or(str, [], [str]),
                         "mob": int,
                         "approved_column": str,
                         "approved_value": Or(str, int),
                         "target_column": str,
                         "remove_subpop": Or(bool,None,[],[str]),
-                        "book_cols_batch_size": int,                        
-                        "n_features_1st_eval": int
+                        "n_features_1st_eval": int,
+                        "n_features_final": int,                        
+                        "book_cols_batch_size": int
                     },
                     "engines": {
                         str: {
@@ -110,6 +106,15 @@ class InferenceModel():
                         }
                     },
                     "datasources": {
+                        'AUDIENCE_TABLE': {
+                            'alias': str,
+                            'ds_details': {
+                                'engine': str,
+                                'schema': str,
+                                'physical_name': str,
+                                Optional('fields_to_remove'): Or(None, [str])
+                            }
+                        },
                         str: {
                             'alias': str,
                             'ds_details': {

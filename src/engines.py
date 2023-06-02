@@ -3,12 +3,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Dict, Any, List, Type, Union
+from typing import Dict, Any, List, Union, Type
 from teradataml import create_context, remove_context
 from teradataml.dataframe.dataframe import DataFrame, in_schema
 from getpass import getpass
 import pandas as pd
 import teradatasql
+from enum import Enum
+
 
 
 class Engine():
@@ -16,23 +18,29 @@ class Engine():
 
     """
 
+    engines_config: Dict
+    
     def __init__(self, engines_config: Dict[str,Dict[Any, Any]]):
-        self.engines_enum = self._set_engines_enum(engines_config)
-
-
-    @classmethod
-    def get_engine_instance(cls, type: str) -> Engine:
-        return cls.engines_enum.__getitem__(type).value #type: ignore
-
-
-    #Binds the engines parameters to a different instance of Engine each
-    def _set_engines_enum(self, engines_config: Dict) -> EnumMeta:
-        engines_dict = {}        
-
-        for ec in engines_config:
-            engines_dict[ec] = globals()[ec.capitalize() + 'Engine']
+        #self.engines_enum = self._init_engines_enum(engines_config)4
+        #self.engines_enum = EnginesEnum()
+        self.engines_config = engines_config
         
-        return Enum('EnginesEnum', engines_dict)
+    #@classmethod
+    def get_engine_instance(self, type: str) -> Type[Engine]:
+        engine = EnginesEnum(type)
+        return engine
+
+    # @classmethod
+    # #Binds the engines parameters to a different instance of Engine each
+    # def _init_engines_enum(cls, engines_config: Dict) -> Type[EnginesEnum]:
+    #     engines_dict = {}        
+
+    #     for ec in engines_config:
+    #         engines_dict[ec] = globals()[ec.capitalize() + 'Engine']
+        
+    #     EnginesEnum = Enum('EnginesEnum', engines_dict, module=__name__, qualname='src.EnginesEnum')
+    #     #list(EnginesEnum)
+    #     return EnginesEnum
     
 
     @abstractmethod
@@ -111,7 +119,7 @@ class TeradataEngine(Engine):
 
     
     #Returns a tuple containing a table's shape (num_rows, num_cols)
-    def get_table_shape(self, table_schema: str, table_name: str) -> tuple[Any,int]:
+    def get_table_shape(self, table_schema: str, table_name: str) -> tuple:
         table_metadata = DataFrame.from_table(in_schema(table_schema, table_name))
         return table_metadata.shape
     
@@ -138,18 +146,11 @@ class HadoopEngine(Engine):
     pass
 
 
-if __name__ == "__main__":
-    pass
-    #engines_cfg = {'TERADATA': {'conn_vars': {'host': '10.225.1.30', 'username': None, 'password': None, 'logmech': 'LAPD'}}, 'HADOOP': {'conn_vars': {'host': None, 'database': None, 'user': None, 'password': None, 'datahub': None}}}
-    #engine_cfg = {'conn_vars': {'host': '10.225.1.30', 'username': None, 'password': None, 'logmech': 'LAPD'}}
-    #te = Engine(engines_cfg)
-    #enum = te.get_engines_enum()
-    #print(type(enum))
-    #print(enum.__getitem__('HADOOP').value)
-    #tb = Engine(engines_cfg).get_engine_instance('TERADATA')
 
-    #print(type(te))
-    #print(te)
+class EnginesEnum(Enum):
+    TERADATA = TeradataEngine
+    HADOOP = HadoopEngine
 
-    #print(type(tb))
-    #print(tb)
+    def __getitem__(self, item: str) -> Union[Engine,None]:
+        EnginesEnum.__members__.items()
+        return self.__dict__.get(item)

@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, Template
 import fastparquet as fp
 import copy
 
+
 class DataSourceGroup():
     """
         Esta classe representa um conjunto de fontes de dados de entrada que será iterado durante o processo de recursive feature elimination.
@@ -29,7 +30,7 @@ class DataSourceGroup():
     df_rfe: pd.DataFrame
 
     def __init__(self, ds_config: Dict, engines_config: Dict):
-        self.engines_enum: EnumMeta = self.__init_engines_enum(engines_config)
+        self.engine: Engine = self.__init_engines_enum(engines_config)
         self._df_audience, self.data_sources = self.__init_data_sources(ds_config)
 
 
@@ -48,7 +49,7 @@ class DataSourceGroup():
             config_dict = ds_config[ds_info]
             ds_engine = config_dict['engine']
 
-            new_ds = DataSource(config_dict, Engine.get_engine_instance(ds_engine))
+            new_ds = DataSource(config_dict, Engine.engines_enum[ds_engine]) #type: ignore
 
             data_sources_dict[new_ds.alias] = new_ds
 
@@ -57,7 +58,7 @@ class DataSourceGroup():
 
     # Returns the entity containing data about the audience used for modelling
     def __init_audience_df(self, pub_ds_config: Dict) -> DataSource:
-        aud_ds = DataSource(pub_ds_config, Engine.get_engine_instance(pub_ds_config['ds_details']['engine']))
+        aud_ds = DataSource(pub_ds_config, self.engine.get_engine_instance([pub_ds_config['ds_details']['engine']])) #type:ignore
         setattr(aud_ds, 'audience_pk', pub_ds_config['audience_pk'])
 
         parquet_file_path = '/temp/PQ_DATA_SOURCE_'
@@ -68,8 +69,8 @@ class DataSourceGroup():
 
 
     #Initializes the possible engines Enumeration
-    def __init_engines_enum(self, eng_params: dict) -> EnumMeta:
-        return Engine(eng_params).engines_enum
+    def __init_engines_enum(self, eng_params: dict) -> Engine:
+        return Engine(eng_params)
     
 
     #Return the audience data
@@ -94,9 +95,9 @@ class DataSourceGroup():
     def left_join_audience_tb(self, data_source: DataSource, mob: int) -> None:
         return data_source.left_join_audience_tb(self.get_df_audience(), mob)
 
-    #Returns the engines enumeration
-    def get_engines_enum(self) -> EnumMeta:
-        return self.engines_enum
+    # #Returns the engines enumeration
+    # def get_engines_enum(self) -> EnginesEnum:
+    #     return self.engines_enum
 
 
     #Returns the list with all the datasources
@@ -125,36 +126,28 @@ class DataSource():
     """
 
 
-
-    _engine: Engine
-    columns: List[str]
-    data_batch: pd.DataFrame
-    candidate_features: List[str]
-    top_rnkd_feats: List[str]
-
-
     def __init__(self, ds_info: dict, ds_engine: Engine) -> None:
         self.alias = ds_info['alias']
         self.ds_details = ds_info['ds_details']
-        #self.engine = self.ds_details['engine']
-        self._schema = self.ds_details['schema']
-        self._physical_name = self.ds_details['physical_name']
+        self.engine_name = self.ds_details['engine']
+        self.schema = self.ds_details['schema']
+        self.physical_name = self.ds_details['physical_name']
         self.fields_to_remove = self.ds_details['fields_to_remove']
         #self._qry_override = ds_info['ds_details']['qry_override']
         self._engine = ds_engine
-        self.shape = self._engine.get_table_shape(self.get_schema(), self.get_physical_name())
-        self._columns = self._engine.get_table_columns(self.get_schema(), self.get_physical_name())
+        self.shape = self._engine.get_table_shape(table_schema=self.schema, table_name=self.physical_name)
+        self.columns = self._engine.get_table_columns(table_schema=self.schema, table_name=self.physical_name)
         self.data_batch = pd.DataFrame()
         self.candidate_features = []
         self.top_rnkd_feats = []
 
 
-    def get_schema(self):
-        return self._schema
+    def get_schema(self) -> str:
+        return self.schema
 
 
-    def get_physical_name(self):
-        return self._physical_name
+    def get_physical_name(self) -> str:
+        return self.physical_name
 
 
     def get_shape(self) -> tuple:
@@ -171,11 +164,11 @@ class DataSource():
 
     def left_join_audience_tb(self, df_audience: DataSource, mob: int) -> None:
         query = f"""
-            CREATE TABLE {self._schema}.BASE_INFERENCIA_MLTOOLS_{self.alias} AS (
+            CREATE TABLE {self.schema}.BASE_INFERENCIA_MLTOOLS_{self.alias} AS (
                 SELECT 
                     A.*
                 FROM {df_audience.get_schema()}.{df_audience.get_physical_name()} AS B
-                LEFT JOIN {self._schema}.{self._physical_name} AS A
+                LEFT JOIN {self.schema}.{self.physical_name} AS A
                     ON A.PK_RIZNUMDOC_XX = B.RIZNUMDOC_XX
                     AND A.PK_DATREF_XX = ADD_MONTHS(B.PK_DATREF_XX, {mob})
                     AND A.PK_TPP_XX = B.PK_TPP_XX
@@ -189,8 +182,8 @@ class DataSource():
 
         env = Environment(loader=FileSystemLoader('/templates'))
         query = env.get_template('read_batch_of_cols').render(columns_list=columns_to_read,
-                                                              table_schema = self._schema,
-                                                              table_name = self._physical_name,
+                                                              table_schema = self.schema,
+                                                              table_name = self.physical_name,
                                                               primary_key = audience_pk)
         
         try:
@@ -199,49 +192,3 @@ class DataSource():
             raise err
         
         return data_batch
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class DataSourceEnum(Enum):
-    """
-        Este Enum lista todos os books de variáveis já incorporados ao código de eliminação recursiva de features. O algoritmo tem por objetivo 
-        a seleção de features com alto poder de discriminação e que estejam de acordo com as premissas estabelecidas para o modelo de inferência 
-        em desenvolvimento.    
-    """
-
-    BC = 'BACEN'
-    BX = 'APONTAMENTOS'
-    BVS = 'BOAVISTA'
-    QUOD_IND = 'QUOD INDICADORES'
-    QUOD_SCORE = 'QUOD_SCORE'
-
-    @classmethod
-    def from_teradata(cls): 
-        return [cls.BC, cls.BX, cls.BVS]
-    
-    @classmethod
-    def from_cdp(cls):
-        return [cls.QUOD_IND, cls.QUOD_SCORE]

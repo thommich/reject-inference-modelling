@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from tqdm import tqdm
-from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Dict, Tuple, List, Any, Union, Callable
 
 import gc
@@ -288,7 +286,7 @@ class RFE():
         # Create another axis and plot f1_score
         ax3 = ax1.twinx()
         ax3.set_ylabel('F1 Score')
-        ax3. spines['right'].set_position(('axes', 1.0)) 
+        ax3.spines['right'].set_position(('axes', 1.0)) 
         result.f1_score.plot(ax=ax3, color='b', label='F1 Score')
 
         # Legend

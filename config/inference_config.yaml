@@ -33,7 +33,7 @@ datasources:
       engine: TERADATA
       schema: 'MESB_T' 
       physical_name: 'TMS_PUB_IMOB_INF' 
-      fields_to_remove: nulL
+      fields_to_remove: null
   BOOK_BACEN:
     alias: 'BC'
     ds_details:
