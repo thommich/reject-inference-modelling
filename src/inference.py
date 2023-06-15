@@ -1,13 +1,9 @@
 import yaml
-import os.path
-import gc
-import math
 import logging
 
 
 from rfe import RFE
-from engines import Engine
-from datasources import DataSourceGroup, DataSource
+from datasources.dsgroup import DataSourcesGroup
 
 import pandas as pd
 from time import time
@@ -53,7 +49,7 @@ class InferenceModel():
     """
 
     _rfe_agent: RFE
-    _data_sources_group: DataSourceGroup
+    _data_sources_group: DataSourcesGroup
 
     #SHOULD GO IN THE CONFIG
     cut_threshold: int
@@ -62,8 +58,9 @@ class InferenceModel():
     def __init__(self, cfg_file_path: str):
         params_rfe, engines_params, data_srcs_params = self._load_config(cfg_file_path)
         self._rfe_agent = RFE(params_rfe)
-        self._data_sources_group = DataSourceGroup(data_srcs_params, engines_params)
-
+        self._data_sources_group = DataSourcesGroup(data_srcs_params, engines_params)
+        
+        
     # Reads YAML config file
     def _load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
@@ -72,7 +69,7 @@ class InferenceModel():
             Returns:
                 Dict(str, str]: Dictionary with the literal parameters.
         """
-
+        
         with open(cfg_file_name) as file:
             yaml_config = yaml.load(file, Loader=yaml.FullLoader)
             if "parameters" not in yaml_config.keys():
@@ -153,7 +150,7 @@ class InferenceModel():
         data_sources = ds_group.data_sources
 
         # Get df_audience from DB and store in memory
-        df_audience = ds_group.get_df_audience()
+        df_audience = ds_group.df_audience
 
         # Loops through each data source specified on the config file
         for features_book in data_sources:
@@ -180,12 +177,13 @@ class InferenceModel():
 
     # Reevaluates features discardaded during the previous analysis step
     def double_check_eliminated(self):
+        
         ds_group = self._data_sources_group
         rfe_obj = self._rfe_agent
 
-        df_rfe = ds_group.get_df_rfe().copy()
+        df_rfe = rfe_obj.get_best_feats_df(ds_group)
 
-        features = [feat for feat in df_rfe.columns.to_list() if feat not in ds_group.get_df_audience().get_columns()]
+        features = [feat for feat in df_rfe.columns.to_list() if feat not in ds_group.df_audience.get_columns()]
         
         self.final_features = rfe_obj.eval_br_reduction(self.result, self.cut_threshold, self.max_br_reduction, features, ds_group)
 

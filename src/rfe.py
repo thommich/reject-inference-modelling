@@ -6,7 +6,8 @@ from typing import Dict, Tuple, List, Any, Union, Callable
 import gc
 import numpy as np
 import pandas as pd
-from datasources import DataSourceGroup, DataSource
+from datasources.dsgroup import DataSourcesGroup
+from datasources.dsmodel import DataSource
 import fastparquet as fp
 
 from sklearn.model_selection import train_test_split
@@ -15,6 +16,22 @@ from lightgbm import LGBMClassifier
 from functools import partial
 import copy
 import math
+import logging
+
+# Create Logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create stream handler
+handler = logging.StreamHandler()
+    
+handler.setLevel(logging.INFO)
+handler.setFormatter(logging.Formatter(
+    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+
+# Add handler to Logger
+logger.addHandler(handler)
+
 
 class RFE():
     """
@@ -28,23 +45,24 @@ class RFE():
     """
 
     def __init__(self, parameters: Dict) -> None:
+        
         self.mob: int = parameters['mob']
         self.approved_column: str = parameters['approved_column']
         self.approved_value: Union[str,List,List[str]] = parameters['approved_value']
         self.target_column: str = parameters['target_column']
         self.remove_subpop: Union[bool, None, List, List[str]] = parameters['remove_subpop']
-        self._book_cols_batch_size: int = parameters['book_cols_batch_size']
+        self.book_cols_batch_size: int = parameters['book_cols_batch_size']
         self.n_features_1st_eval: int = parameters['n_features_1st_eval']
         self.n_features_final: int = parameters['n_features_final']        
+        
 
 
-
-    def _read_data_from_pqfile(self, ds_alias: str, ds_candidate_features: List[str], audience_cols: List) -> Tuple[pd.DataFrame, List[str]]:
+    def _read_data_from_pqfile(self, ds_alias: str, ds_candidate_features: List[str], audience_cols: List[str]) -> Tuple[pd.DataFrame, List[str]]:
+        
         #formats the name of the parquet file that will hold the persisted data
         parquet_file_path = '/temp/PQ_DATA_SOURCE_'
         parquet_file = ''.join([parquet_file_path, ds_alias.upper(), '.parquet'])
 
-        #Read batch of data from DBMS
         df = pd.read_parquet(parquet_file, columns=ds_candidate_features)
 
         #CHECK IF ANY DTYPE CONVERSION WILL BE NECESSARY
@@ -132,46 +150,47 @@ class RFE():
     #Select the 'n_features_batch' best feature candidates from each data source (univariate analysis)
     # based on the capacity to discriminate those individuals with observed performance against the ones
     # who have been denied. Here, higher default rates are expected for inferred/denied individuals when
-    # in comparision to the other group.
-    def narrow_down_feat_candidates_univar(self, ds_group: DataSourceGroup) -> List[str]:
+    # in comparision to the other group.ds_details
+    def narrow_down_feat_candidates_univar(self, ds_group: DataSourcesGroup) -> List[str]:
         ##INITIALIZE LOOP VARIABLES
         #Create variables for the main DataFrames to be passed around
-        data_source: DataSource = getattr(ds_group, 'current_ds')
+
         
         #Calculate total number of batches and start reading data from the DB
-        num_total_batches = math.ceil(len(data_source.get_columns()) - len(ds_group.get_df_audience().get_columns())/self._book_cols_batch_size)
+        num_total_batches = math.ceil((ds_group.current_ds.get_columns_count() - ds_group.df_audience.get_columns_count())/self.book_cols_batch_size)
+        
 
         #Trigger DB join pub + book
-        ds_group.left_join_audience_tb(data_source, self.mob)
+        ds_group.left_join_audience_tb(ds_group.current_ds, self.mob)
 
         #Initialize list to hold intermediate/final results
         sorted_results = pd.DataFrame()
         #Iterates through each batch of columns
         for index in tqdm(range(num_total_batches), leave=False):
-            columns_to_read = data_source.columns[index*self._book_cols_batch_size: (index+1)*self._book_cols_batch_size]
+            columns_to_read = ds_group.current_ds.data_batch.columns[index*self.book_cols_batch_size: (index+1)*self.book_cols_batch_size]
 
             #READS DATA FROM THE DATABASE
-            df = ds_group.get_data_batch(columns_to_read)
+            df = ds_group.current_ds.data_batch(columns_to_read.to_list())
 
             #Filter analytical columns and add target and approved columns
-            analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.get_audience_pk()]
+            analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.df_audience()]
             df = df[analytical_vars + [self.approved_column, self.target_column]]
 
             ##INSTANTIATES A MODEL AND LOOPS THROUGH EVERY FEATURE FITTING, TRAINING AND EVALUATING
-            results = self._univariate_evaluation(analytical_vars, data_source, df)
+            results = self._univariate_evaluation(analytical_vars, ds_group.get_current_ds(), df)
 
             ##PERSISTS THE READ DATAFRAME IN A PARQUET FILE
-            candidate_features = self._persist_parquet_file(sorted_results, results, data_source.alias, df)
+            candidate_features = self._persist_parquet_file(sorted_results, results, ds_group.get_current_ds().alias, df)
 
             #ATTACHES THE BEST FEATURES FOUND UNTIL THIS MOMENT TO THE DATA_SOURCE OBJ
-            data_source.candidate_features = candidate_features
+            ds_group.get_current_ds().candidate_features = candidate_features
         
-        return data_source.candidate_features
+        return ds_group.get_current_ds().candidate_features
 
 
     def select_top_features_multivar(self, df_audience: DataSource, ds_candidate_features: List[str], ds_alias: str) -> List[str]:
         #_read_data_from_db
-        df, analytical_vars = self._read_data_from_pqfile(ds_alias, ds_candidate_features, df_audience.columns)
+        df, analytical_vars = self._read_data_from_pqfile(ds_alias, ds_candidate_features, df_audience.get_columns())
 
         #_selected_features_evaluation
         n_features = self._multivariate_evaluation(analytical_vars, df)
@@ -179,11 +198,11 @@ class RFE():
         return n_features
     
 
-    def get_best_feats_df(self, ds_group: DataSourceGroup) -> pd.DataFrame: 
+    def get_best_feats_df(self, ds_group: DataSourcesGroup) -> pd.DataFrame: 
         
-        audience = ds_group.get_df_audience()
+        audience = ds_group.df_audience()
         
-        df_aud, _ = self._read_data_from_pqfile(audience.alias, audience.columns.copy(), ds_group.get_audience_pk())
+        df_aud, _ = self._read_data_from_pqfile(audience.alias, audience.get_columns()) 
 
         df_rfe = df_aud
         for feature_book in ds_group.data_sources:
@@ -237,7 +256,7 @@ class RFE():
         return result
 
 
-    def recursive_feature_elimination(self, ds_group: DataSourceGroup, df_rfe: pd.DataFrame) -> pd.DataFrame:
+    def recursive_feature_elimination(self, ds_group: DataSourcesGroup, df_rfe: pd.DataFrame) -> pd.DataFrame:
         # Creates a list to append each step of elimitation
         remove = []
         
@@ -301,13 +320,13 @@ class RFE():
                           cut_threshold: int, 
                           max_br_reduction: float, 
                           features: List[str],
-                          ds_group: DataSourceGroup):
+                          ds_group: DataSourcesGroup):
         
         # Features before/after cut_point
         before_features = prev_result.iloc[1:cut_threshold+1].feature.to_list() 
         after_features = [f for f in features if f not in before_features]
 
-        df_rfe = ds_group.get_df_rfe()[features]
+        df_rfe = self.get_best_feats_df(ds_group)[features]
         df_train, df_test, df_neg = self._prepare_training_datasets(df_rfe)
         
         # Get results with only last features 
@@ -342,8 +361,8 @@ class RFE():
         return final_features 
 
 
-    def get_final_results(self, ds_group: DataSourceGroup):
-        df_rfe = ds_group.get_df_rfe()
+    def get_final_results(self, ds_group: DataSourcesGroup):
+        df_rfe = self.get_best_feats_df(ds_group)
         
         approved = df_rfe[self.approved_column].str.lstrip().str.rstrip() == str(self.approved_value)
         df_ap = df_rfe[approved]
@@ -352,8 +371,8 @@ class RFE():
         clf.fit(df_ap[self.final_features], df_ap[self.target_column])
         threshold = self._get_threshold(df_ap[self.target_column], clf.predict_proba(df_ap[self.final_features])[:, 1])
         
-        df_rfe = ds_group.get_df_rfe()
-        df_rfe['INF'] = (clf.predict_proba(ds_group.get_df_rfe()[self.final_features])[:, 1] > threshold) * 1
+        df_rfe = self.get_best_feats_df(ds_group)
+        df_rfe['INF'] = (clf.predict_proba(self.get_best_feats_df(ds_group)[self.final_features])[:, 1] > threshold) * 1
         data = pd.DataFrame({
                 'Inf Contratos': df_rfe[approved].groupby('PK_DATREF_XX').INF.mean(),
                 'Contratos': df_rfe[approved].groupby('PK_DATREF_XX')[self.target_column].mean(), 
