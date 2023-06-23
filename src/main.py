@@ -2,8 +2,8 @@ from inference import InferenceModel
 
 def main():
     inf = InferenceModel('../config/inference_config.yaml')
-
-    #inf.rfe()
+    print('Initialized inference')
+    inf.rfe()
 
     #inf.get_features()
     #inf.double_check_eliminated()

@@ -68,8 +68,7 @@ class InferenceModel():
 
             Returns:
                 Dict(str, str]: Dictionary with the literal parameters.
-        """
-        
+        """        
         with open(cfg_file_name) as file:
             yaml_config = yaml.load(file, Loader=yaml.FullLoader)
             if "parameters" not in yaml_config.keys():
@@ -104,6 +103,7 @@ class InferenceModel():
                     },
                     "datasources": {
                         'AUDIENCE_TABLE': {
+                            'audience_pk': Or([str], str),
                             'alias': str,
                             'ds_details': {
                                 'engine': str,
@@ -166,6 +166,7 @@ class InferenceModel():
 
             data_sources[features_book].top_rnkd_feats = top_features
 
+
         # Consolidates all the chosen variables into a single dataframe
         df_rfe = rfe_obj.get_best_feats_df(ds_group)
 
@@ -181,7 +182,9 @@ class InferenceModel():
         ds_group = self._data_sources_group
         rfe_obj = self._rfe_agent
 
-        df_rfe = rfe_obj.get_best_feats_df(ds_group)
+        best_feats = [ds.top_rnkd_feats for ds in ds_group.data_sources]
+
+        df_rfe = rfe_obj.get_best_feats_df(ds_group.df_audience)
 
         features = [feat for feat in df_rfe.columns.to_list() if feat not in ds_group.df_audience.get_columns()]
         

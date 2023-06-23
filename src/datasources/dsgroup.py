@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple, List, Union, Any, ClassVar
+from typing import Dict, Tuple, List, Union, Any, Type, Mapping, Literal, MutableSequence
 import copy
 import pandas as pd
 import fastparquet as fp
-from engines.engines import EngineInstanceProvider, EngineFactory
+from engines.engines import EngineInstanceProvider, EnginesInterface
 from engines.teradata import TeradataEngineBuilder
 from engines.hadoop import HadoopEngineBuilder
 from .dsmodel import DataSource
-import teradatasql
+#import teradatasql
 import logging
 
 # Create Logger
@@ -30,21 +30,12 @@ class DataSourcesGroup():
     
 
     # data_sources_dict: ClassVar[Dict[str,DataSource]]
-
-    def __init__(self, ds_config: Dict[str,Dict[str,Dict[str,List[str]]]], engines_config: Dict[str,Dict[str,List[str]]]):
+                                  
+    def __init__(self, ds_config: Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]], engines_config: Dict[str,Dict[str,List[str]]]):
         self.engines_factory = self.__init_engines_factory(engines_config)
         self.df_audience, self.data_sources = self.__init_data_sources(ds_config)
         self.current_ds: DataSource
-
-        
-    # def __enter__(self, flavour: str) -> Dict[str,DataSource]:
-    #     self.engine = self.engines_factory.get(flavour)
-    #     return self.data_sources
-      
-
-    # def __iter__(self) -> Dict[str,DataSource]:
-    #     yield from self.data_sources
-
+        self.top_ranked_feats = []
 
 
     #Registers the builders for all the possible engines declared on the config file
@@ -55,43 +46,42 @@ class DataSourcesGroup():
         return engines_factory
 
     # Returns the entity containing data about the audience used for modelling
-    def _init_audience_df(self, pub_ds_config: Dict[str,Union[str,List[str]]]) -> DataSource:
-        
+    def _init_audience_df(self, pub_ds_config: Mapping[str,Any]) -> DataSource:
         aud_engine = self.engines_factory.get(pub_ds_config['ds_details']['engine'])
         
         aud_ds = DataSource(pub_ds_config, aud_engine) 
         setattr(aud_ds, 'audience_pk', pub_ds_config['audience_pk'])
 
-        parquet_file_path = '/temp/PQ_DATA_SOURCE_'
-        parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
-        fp.write(parquet_file, aud_ds.data_batch, compression='SNAPPY', append=True)
+        # parquet_file_path = '/temp/PQ_DATA_SOURCE_'
+        # parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
+        # fp.write(parquet_file, aud_ds.data_batch, compression='SNAPPY', append=True)
 
         return aud_ds 
     
 
     #Binds the data source parameters to a different instance of DataSource each
-    def __init_data_sources (self, ds_config: Dict[str,Dict[str,Union[str,List[str]]]]) -> Tuple:
-        pub_ds_config = ds_config['AUDIENCE_TABLE']
+    def __init_data_sources (self, ds_config: Dict[str,Any]) -> Tuple:
+      
+        aud_ds_config = ds_config['AUDIENCE_TABLE']
         
-        ds_audience = self._init_audience_df(pub_ds_config)
+        ds_audience = self._init_audience_df(aud_ds_config)
         
-        data_sources_dict = {ds_audience.alias: ds_audience}
+        data_sources_dict = {}
+        data_sources_dict[ds_audience.alias] = ds_audience
+        ds_list = [ds_info for ds_info in ds_config if ds_info != 'AUDIENCE_TABLE']
                                                            
-        for ds_info in ds_config:
+        for ds_info in ds_list:
             config_dict = ds_config[ds_info]
-            #ds_engine = config_dict['engine']
-            #DataSource(pub_ds_config, self.engines_factory.get(self.current_ds.engine))
-            new_engine = self.engines_factory.get(self.current_ds.engine)
+            new_engine = self.engines_factory.get(config_dict['ds_details']['engine'])
 
             new_ds = DataSource(config_dict, new_engine)
+
             data_sources_dict[new_ds.alias] = new_ds
 
         return ds_audience, data_sources_dict
 
 
 
-    
-    
 
 
     #Return the audience data
@@ -103,7 +93,7 @@ class DataSourcesGroup():
         return getattr(self.get_df_audience(), 'audience_pk')
     
     
-    def get_data_batch(self, columns_to_read: List[str]) -> pd.DataFrame:
+    def get_data_batch(self, columns_to_read: MutableSequence[str]) -> pd.DataFrame:
         data_source: DataSource = getattr(self, 'current_ds')
         
         df = data_source.read_data_batch(columns_to_read, self.get_audience_pk())
@@ -126,7 +116,7 @@ class DataSourcesGroup():
                     AND A.PK_TPP_XX = B.PK_TPP_XX
             ) WITH DATA PRIMARY INDEX (PK_RIZNUMDOC_XX,PK_DATREF_XX)
         """
-        new_engine = self.engines_factory.get(data_source.engine_name)()
+        new_engine = self.engines_factory.get(data_source.engine_name)
         return new_engine.execute_query(query)
 
 

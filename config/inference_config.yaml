@@ -14,58 +14,60 @@ parameters:
 engines:
   TERADATA:
     conn_vars:
-      host: "10.225.1.30"
-      username: null
+      host: "10.0.2.15"
+      username: 'dbc'
       password: null
-      logmech: 'LADP'
-  HADOOP:
-    conn_vars:
-      host: null    
-      database: 'GHP00011'
-      user: 'thommic'
-      password: null
-      datahub: 'dhucorp1'
+      logmech: null
+  # HADOOP:
+  #   conn_vars:
+  #     host: null    
+  #     database: 'GHP00011'
+  #     user: 'thommic'
+  #     password: null
+  #     datahub: 'dhucorp1'
 
+#Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]]
 datasources:
   AUDIENCE_TABLE:
-    alias: 'AUDIENCE'
+    audience_pk: ['PK_RIZNUMDOC_XX']
+    alias: 'HR1'
     ds_details:
-      engine: TERADATA
-      schema: 'MESB_T' 
-      physical_name: 'TMS_PUB_IMOB_INF' 
+      engine: 'TERADATA'
+      schema: 'DBC' 
+      physical_name: 'HR' 
       fields_to_remove: null
   BOOK_BACEN:
     alias: 'BC'
     ds_details:
-      engine: TERADATA
-      schema: 'MESB_GED' 
-      physical_name: 'BK_BACEN_IND' 
+      engine: 'TERADATA'
+      schema: 'DBC' 
+      physical_name: 'HR' 
       fields_to_remove: null
   BOOK_APONTAMENTOS:
     alias: 'BX'
     ds_details:
-      engine: TERADATA
+      engine: 'TERADATA'
       schema: 'MESB_GED' 
       physical_name: 'BK_APONT_IND'
       fields_to_remove: null 
   BOOK_BVS:
     alias: 'BVS'
     ds_details:
-      engine: TERADATA
+      engine: 'TERADATA'
       schema: 'MESB_GED'
       physical_name: 'BK_BVSPF_IND' 
       fields_to_remove: ['VL_CODMDLSC0001_01M_BV'] 
-  BOOK_QUOD_INDICADORES:
-    alias: 'QUODIND'
-    ds_details:
-      engine: HADOOP
-      schema: 'GHP00071' 
-      physical_name: 'VIEW_QUOD_CADPOSITIVO_INDICADORES'
-      fields_to_remove: null
-  BOOK_QUOD_SCORES:
-    alias: 'QUODSCR'
-    ds_details:
-      engine: HADOOP
-      schema: 'GHP00071' 
-      physical_name: 'EXP_QUOD_CADPOSITIVO_SCORE'
-      fields_to_remove: null
+  # BOOK_QUOD_INDICADORES:
+  #   alias: 'QUODIND'
+  #   ds_details:
+  #     engine: 'HADOOP'
+  #     schema: 'GHP00071' 
+  #     physical_name: 'VIEW_QUOD_CADPOSITIVO_INDICADORES'
+  #     fields_to_remove: null
+  # BOOK_QUOD_SCORES:
+  #   alias: 'QUODSCR'
+  #   ds_details:
+  #     engine: 'HADOOP'
+  #     schema: 'GHP00071' 
+  #     physical_name: 'EXP_QUOD_CADPOSITIVO_SCORE'
+  #     fields_to_remove: null

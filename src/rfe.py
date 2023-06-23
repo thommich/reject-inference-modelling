@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from tqdm import tqdm
-from typing import Dict, Tuple, List, Any, Union, Callable
+from typing import Dict, Tuple, List, Any, Union, Callable, MutableSequence, Optional
 
-import gc
 import numpy as np
 import pandas as pd
 from datasources.dsgroup import DataSourcesGroup
@@ -45,7 +44,6 @@ class RFE():
     """
 
     def __init__(self, parameters: Dict) -> None:
-        
         self.mob: int = parameters['mob']
         self.approved_column: str = parameters['approved_column']
         self.approved_value: Union[str,List,List[str]] = parameters['approved_value']
@@ -155,11 +153,9 @@ class RFE():
         ##INITIALIZE LOOP VARIABLES
         #Create variables for the main DataFrames to be passed around
 
-        
         #Calculate total number of batches and start reading data from the DB
         num_total_batches = math.ceil((ds_group.current_ds.get_columns_count() - ds_group.df_audience.get_columns_count())/self.book_cols_batch_size)
         
-
         #Trigger DB join pub + book
         ds_group.left_join_audience_tb(ds_group.current_ds, self.mob)
 
@@ -167,10 +163,10 @@ class RFE():
         sorted_results = pd.DataFrame()
         #Iterates through each batch of columns
         for index in tqdm(range(num_total_batches), leave=False):
-            columns_to_read = ds_group.current_ds.data_batch.columns[index*self.book_cols_batch_size: (index+1)*self.book_cols_batch_size]
+            columns_to_read = ds_group.current_ds.columns[index*self.book_cols_batch_size: (index+1)*self.book_cols_batch_size]
 
             #READS DATA FROM THE DATABASE
-            df = ds_group.current_ds.data_batch(columns_to_read.to_list())
+            df = ds_group.current_ds.read_data_batch(columns_to_read, ds_group.get_audience_pk())
 
             #Filter analytical columns and add target and approved columns
             analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.df_audience()]
@@ -202,7 +198,7 @@ class RFE():
         
         audience = ds_group.df_audience()
         
-        df_aud, _ = self._read_data_from_pqfile(audience.alias, audience.get_columns()) 
+        df_aud, _ = self._read_data_from_pqfile(audience.alias, ds_group.top_ranked_feats, audience.get_columns()) 
 
         df_rfe = df_aud
         for feature_book in ds_group.data_sources:
@@ -279,7 +275,7 @@ class RFE():
             # Loop through remaining features to calculate results
             for feature in features: # Initialize X with remaining features                
                 # Calculate results
-                filter_df = partial(pd.DataFrame.loc, [features.remove(feature)])
+            # Loop through remaining features to calculate results
                 result = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
                 results.append(result)
 
@@ -330,13 +326,13 @@ class RFE():
         df_train, df_test, df_neg = self._prepare_training_datasets(df_rfe)
         
         # Get results with only last features 
-        filter_df = partial(pd.DataFrame.loc, [after_features])
+        filter_df = partial(pd.DataFrame.filter, items=after_features)
         results = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
         final_results = copy.deepcopy(results)   
 
         for feature in tqdm(before_features, desc='Avaliando a perfomance das features removidas'):
             # Calculate results
-            filter_df = partial(pd.DataFrame.loc, [after_features + [feature]])
+            filter_df = partial(pd.DataFrame.filter, items=[after_features + [feature]])
             result = self._get_prediction_results(filter_df, df_train, df_test, df_neg) 
             results.append(result)
             
@@ -348,7 +344,7 @@ class RFE():
 
         for feature in tqdm(df_result.drop(0).feature.to_list(), desc='Devolvendo as features que não impactam os negados'): 
             # Calculate results
-            filter_df = partial(pd.DataFrame.loc, [final_features + [feature]])
+            filter_df = partial(pd.DataFrame.filter, items=[final_features + [feature]])
             result = self._get_prediction_results(filter_df, df_train, df_test, df_neg)
             
             if result[4] > (1-max_br_reduction) * df_result.iloc[0].br_neg: 
