@@ -4,26 +4,11 @@ import abc
 from abc import abstractmethod
 from typing import List, Callable, Tuple, Dict
 import pandas as pd
-import logging
-
-# Create Logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create stream handler
-handler = logging.StreamHandler()
-    
-handler.setLevel(logging.INFO)
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-
-# Add handler to Logger
-logger.addHandler(handler)
-
 
 class EngineFactory:
     """Factory for creating all different types of engine objects"""
     
+#    @module_logger
     def __init__(self, eng_params: Dict, builders: Dict):
         """
         Initializes the new Engine Factory object
@@ -39,6 +24,7 @@ class EngineFactory:
         self._builders = builders
     
     
+#    @module_logger
     def register_builder(self, flavour: str, builder: Callable):
         """
         Register a new builder to the factory
@@ -53,6 +39,7 @@ class EngineFactory:
         self._builders[flavour] = builder(self.eng_params)
 
 
+#    @module_logger
     def create(self, flavour:str) -> EnginesInterface:
         """
         Retrieves and calls the appropiate builder using the name provided by the 'flavour' parameter
@@ -80,6 +67,7 @@ class EngineFactory:
         return builder()
     
     
+#    @module_logger
     def get(self, flavour: str) -> EnginesInterface:
         """
         Calls the 'create' method on the instance itself passing down the 'flavour' parameter
@@ -101,11 +89,13 @@ class EngineFactory:
 
 class EngineInstanceProvider(EngineFactory):
         
+#    @module_logger
     def __init__(self, eng_params: Dict) -> None:
         self._builders = {}
         super().__init__(eng_params, self._builders)
         
-                        
+        
+#    @module_logger                
     def get(self, flavour: str) -> EnginesInterface:
         return self.create(flavour)
 
@@ -175,6 +165,14 @@ class EnginesInterface(metaclass=abc.ABCMeta):
     def get_table_columns(self, table_schema: str, table_name: str) -> List[str]:
         raise NotImplementedError
     
+    
+    @abc.abstractmethod
+    def join_aud_ds_query(self, **kwargs) -> str:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def read_data_batch(self, **kwargs) -> str:
+        raise NotImplementedError
     
     
 # class EnginesBuilder(metaclass=abc.ABCMeta):

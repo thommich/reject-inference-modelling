@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS BASE_INFERENCIA_MLTOOLS_{{ds_alias}} AS 
+    SELECT
+    {% for col in bk_features %}
+        B.{{ col }},
+    {%- endfor %}
+    {% for col in audience_pk %}
+        A.{{ col }},
+    {%- endfor %}
+        A.{{ approved_column }},
+        A.{{ target_column }}        
+    FROM {{aud_ds_physical_name}} AS A
+    LEFT JOIN {{ds_physical_name}} AS B
+        ON A.PK_RIZNUMDOC_XX = B.PK_RIZNUMDOC_XX
+        AND DATE(A.PK_DATREF_XX, '+{{ mob }} months') = B.PK_DATREF_XX
+        AND A.PK_TPP_XX = B.PK_TPP_XX;
