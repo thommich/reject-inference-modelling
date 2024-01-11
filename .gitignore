@@ -160,3 +160,6 @@ cython_debug/
 #.idea/
 src/get-pip.py
 .vscode/settings.json
+appmap.yml
+config/inference_config copy.yaml
+config/lib_cfg.yaml

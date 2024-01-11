@@ -31,8 +31,9 @@ class InferenceModel():
         
         
     # Reads YAML config file
+    @staticmethod
     @module_logger
-    def _load_config(self, cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
+    def _load_config(cfg_file_name: str) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
             Loads configuration file containing multiple module parameters.
 

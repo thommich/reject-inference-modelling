@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from tqdm import tqdm
-from typing import Dict, Tuple, List, Union, Callable
+from typing import Dict, Tuple, List, Union
 
 import numpy as np
 import pandas as pd
@@ -11,8 +11,7 @@ import fastparquet as fp
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score, recall_score
-from lightgbm import LGBMClassifier, Booster
-from functools import partial
+from lightgbm import LGBMClassifier
 import copy
 import math
 from log_utils import setup_logging, log_func
@@ -143,8 +142,11 @@ class RFE():
     @module_logger
     def narrow_down_feat_candidates_univar(self, ds_group: DataSourcesGroup) -> List[str]:
         #Calculate total number of batches and start reading data from the DB
-        num_total_batches = math.ceil((ds_group.current_ds.get_columns_count() - 
-                                       ds_group.df_audience.get_columns_count())/self.book_cols_batch_size)
+        current_ds_col_count = ds_group.current_ds.get_columns_count()
+        audience_ds_col_count = ds_group.df_audience.get_columns_count()
+        
+        num_total_batches = math.ceil(
+            (current_ds_col_count - audience_ds_col_count)/self.book_cols_batch_size)
         
         #Trigger DB join pub + book
         ds_group.left_join_audience_tb(ds_group.current_ds, self.mob, self.approved_column, self.target_column)
@@ -412,6 +414,6 @@ class RFE():
         # pick point of minimum distance between precision and recall
         cross_point = np.argmin(np.abs(values[:, 1] - values[:, 2]))
         
-        return cross_point/100
+        return int(cross_point)/100
 
     

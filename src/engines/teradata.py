@@ -5,9 +5,7 @@ from teradataml.dataframe.dataframe import DataFrame, in_schema
 from getpass import getpass
 import pandas as pd
 import teradatasql
-from datasources.dsmodel import DataSource
 from engines.engines import EnginesInterface
-import engines.teradata as TeraEngine
 import logging
 
 # Create Logger
@@ -26,17 +24,15 @@ logger.addHandler(handler)
 
 
 
-class TeradataEngine(EnginesInterface): 
-    _name: str = 'TERADATA'
+class TeradataEngine(EnginesInterface, name='TERADATA'): 
 
-    def __init__(self, engines_cfg: Dict[str,dict]):
-        self.engines_cfg = engines_cfg
-        self.conn_vars = engines_cfg[self.name]['conn_vars']
+    def __init__(self):
+        self.conn_vars = super().engines_cfg[self.name]['conn_vars']
         self._conn = self.get_db_connection()
 
     @property
     def name(cls):
-        return cls._name
+        return cls.name
     
     #@classmethod
     @property
@@ -137,15 +133,4 @@ class TeradataEngine(EnginesInterface):
         
 
     def read_data_batch(self, **kwargs) -> None:
-        pass
-
-class TeradataEngineBuilder():
-    def __init__(self, engines_cfg: Dict):
-        self._instance = None
-        self.engines_cfg = engines_cfg
-
-    def __call__(self) -> TeradataEngine:
-        if not self._instance:
-            self._instance = TeradataEngine(self.engines_cfg)
-        return self._instance
-    
+        pass    

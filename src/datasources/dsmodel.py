@@ -11,7 +11,7 @@ class DataSource:
     
     
 #    @module_logger
-    def __init__(self, ds_info: Mapping[str,Any], engine:EnginesInterface):
+    def __init__(self, ds_info: Mapping[str, Any], engine: EnginesInterface):
         self.alias: str = ds_info['alias']
         self.ds_details: Dict[str,Any] = ds_info['ds_details']
         self.engine_name: str = self.ds_details['engine']
@@ -38,9 +38,11 @@ class DataSource:
 
 
 #    @module_logger
-    def get_columns_count(self) ->  Union[int, None]:
+    def get_columns_count(self) ->  int:
         if self.columns is not None:
              return len(self.columns)
+        
+        return 0
     
     
 #    @module_logger

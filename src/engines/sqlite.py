@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
-from engines.engines import EnginesInterface
+#from engines.engines import EnginesInterface
+from engines.engines import EnginesInterface#, Engines
 import sqlite3
 from jinja2 import Environment, FileSystemLoader
 from log_utils import setup_logging, log_func
@@ -11,23 +12,16 @@ logger = setup_logging(name=__name__)
 module_logger = log_func(__name__)
 
 
-class SQLiteEngine(EnginesInterface): 
-    _name: str = 'SQLITE'
-
-
-    #@module_logger
-    def __init__(self, engines_cfg: Dict[str,dict]):
-        self.engines_cfg = engines_cfg
-        self.conn_vars = engines_cfg[self.name]['conn_vars']
+class SQLiteEngine(EnginesInterface, name="SQLITE"):
+    
+    @module_logger
+    def __init__(self):
+        self.conn_vars = super().engines_cfg[self.name]['conn_vars']
         self._conn = None
 
-
-    #@module_logger
     @property
     def name(cls):
-        return cls._name
-
-
+        return cls.name
 
     #@classmethod
     #@module_logger
@@ -148,24 +142,4 @@ class SQLiteEngine(EnginesInterface):
                                                                             #primary_key = primary_key)
         
         return query
-        
-
-    
-    
-    
-   
-   
-class SQLiteEngineBuilder():
-    
-    @module_logger
-    def __init__(self, engines_cfg: Dict):
-        self._instance = None
-        self.engines_cfg = engines_cfg
-
-
-    @module_logger
-    def __call__(self) -> SQLiteEngine:
-        if not self._instance:
-            self._instance = SQLiteEngine(self.engines_cfg)
-        return self._instance
     
