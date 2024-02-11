@@ -81,7 +81,7 @@ class SQLiteEngine(EnginesInterface, name="SQLITE"):
         
         cursor = self.conn.cursor()
         
-        columns_query = f"SELECT * FROM {table_name} LIMIT 1"
+        columns_query = f"SELECT * FROM {table_schema}.{table_name} LIMIT 1"
         
         r = cursor.execute(columns_query).fetchone()
         

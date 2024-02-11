@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import abc 
 from abc import abstractmethod
-from typing import Any, List, Callable, Tuple, Dict
+from typing import List, Tuple, Dict
 import pandas as pd
 
 
 class EnginesInterface(abc.ABCMeta):
-    """
+    """ Defines an interface for the implementation Engines.
 
+    This interface is designed to be extensible so that the algorithm can be adapted to consume data from 
+    virtually any data source. It is defined as a metaclass that should
     """
     _eng_registry = {}
     engines_cfg = {}
@@ -26,7 +28,6 @@ class EnginesInterface(abc.ABCMeta):
             cls._eng_registry[name] = cls
     
     @classmethod
-    @property
     @abstractmethod
     def conn(cls):
         raise NotImplementedError

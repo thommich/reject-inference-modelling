@@ -16,19 +16,30 @@ class DataSourcesGroup():
     
     @module_logger                                  
     def __init__(self, ds_config: Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]], engines_config: Dict[str,Dict[str,List[str]]]):
-        self.enginesEnum = self.__init_engines_enum(engines_config)
-        self.df_audience, self.data_sources = self.__init_data_sources(ds_config)
+        self.enginesEnum = self._init_engines_enum(engines_config)
+        self.df_audience, self.data_sources = self._init_data_sources(ds_config)
         self.current_ds: DataSource
         self.top_ranked_feats = []
 
     @module_logger
-    def __init_engines_enum(self, engines_config: Dict[str, Dict]):
-        eng_registry = {k: v for k, v in EnginesInterface(engines_config)._eng_registry.items() if k in engines_config.keys()}
+    def _init_engines_enum(self, engines_config: Dict[str, Dict]):
+        enum_members = {k: v for k, v in EnginesInterface(
+            engines_config)._eng_registry.items() if k in engines_config.keys()}
         
-        EnginesEnum = enum.Enum('EnginesEnum', eng_registry, module=engines)        
-        
+        EnginesEnum = enum.Enum('EnginesEnum', enum_members, module=engines)
+        #print(EnginesEnum)
         return EnginesEnum
 
+#    @module_logger
+#    def _init_engines(self, engines_config: Dict[str, Dict]):
+#        eng_enum = self._init_engines_enum(engines_config)
+#
+#        ds_group_engines = {k,v for k,v }
+#        
+#        
+#        EnginesEnum = enum.Enum('EnginesEnum', eng_registry, module=engines)
+#        # print(EnginesEnum)
+#        return EnginesEnum
 
     # Returns the entity containing data about the audience used for modelling
     @module_logger
@@ -51,7 +62,7 @@ class DataSourcesGroup():
 
     #Binds the data source parameters to a different instance of DataSource each
     @module_logger
-    def __init_data_sources (self, ds_config: Dict[str,Any]):# -> Tuple:
+    def _init_data_sources (self, ds_config: Dict[str,Any]):# -> Tuple:
         aud_ds_config = ds_config['AUDIENCE_TABLE']
         
         ds_audience = self._init_audience_df(aud_ds_config)
@@ -114,3 +125,16 @@ class DataSourcesGroup():
     #@module_logger
     def get_current_ds(self) -> DataSource:
         return self.current_ds
+    
+    
+#if __name__ == "__main__":
+#
+#    engines_config = {'SQLITE': {'conn_vars': {'db_name': 'inference_modelling_test.db'}},
+#                      'TERADATA': {'conn_vars': {'host': "10.0.2.15",
+#                                                 'username': 'dbc',
+#                                                 'password': None,
+#                                                 'logmech': None}}}
+#
+#    ds = DataSourcesGroup({}, engines_config)
+#
+#    print(ds.enginesEnum.TERADATA.__dict__)
