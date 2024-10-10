@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import yaml
 from rfe import RFE
 from datasources.dsgroup import DataSourcesGroup
@@ -23,7 +25,7 @@ class InferenceModel():
     cut_threshold: int
     max_br_reduction: float
 
-    @module_logger
+    #@module_logger
     def __init__(self, cfg_file_path: str):
         params_rfe, engines_params, data_srcs_params = self._load_config(cfg_file_path)
         self._rfe_agent = RFE(params_rfe)
@@ -60,9 +62,9 @@ class InferenceModel():
                         "description": str,
                         "mob": int,
                         "approved_column": str,
-                        "approved_value": Or(str, int),
+                        "approved_value": Or(str,int),
                         "target_column": str,
-                        "remove_subpop": Or(bool,None,[],[str]),
+                        "remove_subpop": Optional(Or(bool, list[Optional(str)])),
                         "n_features_1st_eval": int,
                         "n_features_final": int,                        
                         "book_cols_batch_size": int
@@ -74,13 +76,13 @@ class InferenceModel():
                     },
                     "datasources": {
                         'AUDIENCE_TABLE': {
-                            'audience_pk': Or([str], str),
+                            'audience_pk': Or(list[str],str),
                             'alias': str,
                             'ds_details': {
                                 'engine': str,
                                 'schema': str,
                                 'physical_name': str,
-                                Optional('fields_to_remove'): Or(None, [str])
+                                Optional('fields_to_remove'): Or(None,[str]) # pyright: ignore
                             }
                         },
                         str: {
@@ -89,7 +91,7 @@ class InferenceModel():
                                 'engine': str,
                                 'schema': str,
                                 'physical_name': str,
-                                Optional('fields_to_remove'): Or(None, [str])
+                                Optional('fields_to_remove'): Or(None,[str]) # pyright: ignore
                             }
                         }
                     }
@@ -109,12 +111,12 @@ class InferenceModel():
         return parameters, engines_params, data_srcs_params
 
     # Validate config file
-    @module_logger
+    #@module_logger
     def _validate_config(self):
         pass
 
     # Recursive feature elimination implementation
-    @module_logger
+    #@module_logger
     def rfe(self):
         # Uses the RFE object instantiated during the class's initialization
         rfe_obj = self._rfe_agent
@@ -149,7 +151,7 @@ class InferenceModel():
 
 
     # Reevaluates features discardaded during the previous analysis step
-    @module_logger
+    #@module_logger
     def double_check_eliminated(self, cut_threshold: int, max_br_reduction: float):
         
         ds_group = self._data_sources_group
@@ -162,7 +164,7 @@ class InferenceModel():
 
         return 
 
-    @module_logger
+    #@module_logger
     def final_results(self):
         ds_group = self._data_sources_group
         rfe_obj = self._rfe_agent
@@ -171,10 +173,10 @@ class InferenceModel():
 
         
     # Retrocompatibility
-    @module_logger
+    #@module_logger
     def get_features(self, cut_threshold: int, max_br_reduction: float):
         return self.double_check_eliminated(cut_threshold, max_br_reduction)
     
-    @module_logger
+    #@module_logger
     def get_results(self):
         return self.final_results()
