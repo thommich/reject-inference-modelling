@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from tqdm import tqdm
-from typing import Dict, Tuple, List, Union
+import copy
+import math
 
 import numpy as np
 import pandas as pd
+import fastparquet as fp
+import matplotlib.pyplot as plt
+
+from tqdm import tqdm
+from typing import Dict, Tuple, List, Union
+from lightgbm import LGBMClassifier
+from log_utils import setup_logging, log_func
+
+from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 from datasources.dsgroup import DataSourcesGroup
 from datasources.dsmodel import DataSource
-import fastparquet as fp
-
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, precision_score, recall_score
-from lightgbm import LGBMClassifier
-import copy
-import math
-from log_utils import setup_logging, log_func
-import matplotlib.pyplot as plt
 
 logger = setup_logging(name=__name__)
 module_logger = log_func(__name__)
@@ -32,7 +33,7 @@ class RFE():
             alias (str, optional): Um alias a ser usado ao gerar consultas envolvendo essa mesa. Se não for especificado, o nome físico será usado.
     """
 
-    @module_logger
+    #@module_logger
     def __init__(self, parameters: Dict) -> None:
         self.mob: int = parameters['mob']
         self.approved_column: str = parameters['approved_column']
@@ -44,7 +45,7 @@ class RFE():
         self.n_features_final: int = parameters['n_features_final']        
         
 
-    @module_logger
+    #@module_logger
     def _read_data_from_pqfile(self, ds_alias: str, ds_candidate_features: List[str]) -> pd.DataFrame:
         
         #formats the name of the parquet file that will hold the persisted data
@@ -74,7 +75,7 @@ class RFE():
         return df_train, df_test, df_neg
     
 
-    @module_logger
+    #@module_logger
     def _univariate_evaluation(self, bk_features: List[str], ds: DataSource, df: pd.DataFrame) -> pd.DataFrame:
         ##PREPARE TRAIN AND TEST DATA
         df_train, df_test, df_neg = self._prepare_training_datasets(df)
@@ -99,13 +100,13 @@ class RFE():
         return results
 
     
-    @module_logger
+    #@module_logger
     def _multivariate_evaluation(self, pre_selected_feats: List[str], df: pd.DataFrame) -> List[str]:
         ##PREPARE TRAIN AND TEST DATA
         df_train, _, _ = self._prepare_training_datasets(df) 
 
         #Trains a LightGBM classifier
-        clf = LGBMClassifier(random_state=23, num_leaves = 40) 
+        clf = LGBMClassifier(random_state=23, num_leaves = 40, verbosity=0) 
         clf.fit(df_train[pre_selected_feats], df_train[self.target_column])
         boost = clf._Booster
         
@@ -117,7 +118,7 @@ class RFE():
         return n_features
     
 
-    @module_logger
+    #@module_logger
     def _persist_parquet_file(self, sorted_results: pd.DataFrame, results: pd.DataFrame, alias: str, df: pd.DataFrame) -> List[str]:
         #Formats the name of the parquet file that will hold the persisted data
         parquet_file_path = './tmp/PQ_DATA_SOURCE_'
@@ -139,7 +140,7 @@ class RFE():
     # based on the capacity to discriminate those individuals with observed performance against the ones
     # who have been denied. Here, higher default rates are expected for inferred/denied individuals when
     # in comparision to the other group.ds_details
-    @module_logger
+    #@module_logger
     def narrow_down_feat_candidates_univar(self, ds_group: DataSourcesGroup) -> List[str]:
         #Calculate total number of batches and start reading data from the DB
         current_ds_col_count = ds_group.current_ds.get_columns_count()
@@ -177,7 +178,7 @@ class RFE():
         return ds_group.current_ds.candidate_features
 
 
-    @module_logger
+    #@module_logger
     def select_top_features_multivar(self, df_audience: DataSource, ds_candidate_features: List[str], ds_alias: str) -> List[str]:
         #_read_data_from_db
         df = self._read_data_from_pqfile(ds_alias, ds_candidate_features)
@@ -194,7 +195,7 @@ class RFE():
         return n_features
     
 
-    @module_logger
+    #@module_logger
     def get_best_feats_df(self, ds_group: DataSourcesGroup) -> pd.DataFrame: 
         join_cols = ds_group.audience_pk
         
@@ -243,8 +244,8 @@ class RFE():
           
         clf.fit(X_train, y_train)
 
-        pred = pd.Series(clf.predict(X_test))
-        pred_neg = pd.Series(clf.predict(X_test_neg))
+        pred = pd.Series(clf.predict(X_test)) # pyright: ignore
+        pred_neg = pd.Series(clf.predict(X_test_neg)) # pyright: ignore
         
         result = [
             feature,
@@ -258,7 +259,7 @@ class RFE():
         return result
 
 
-    @module_logger
+    #@module_logger
     def recursive_feature_elimination(self, ds_group: DataSourcesGroup, df_rfe: pd.DataFrame) -> pd.DataFrame:
         # Creates a list to append each step of elimitation
         remove = []
@@ -304,7 +305,7 @@ class RFE():
         
         return result
 
-    @module_logger
+    #@module_logger
     def plot_results(self, result: pd.DataFrame):
         fig, ax1 = plt.subplots()
         ax2 = ax1.twinx()
@@ -323,7 +324,7 @@ class RFE():
         return result
 
 
-    @module_logger
+    #@module_logger
     def eval_br_reduction(self, 
                           prev_result: pd.DataFrame, 
                           features: List[str], 
@@ -370,7 +371,7 @@ class RFE():
         return final_features 
 
 
-    @module_logger
+    #@module_logger
     def get_final_results(self, ds_group: DataSourcesGroup):
         df_rfe = self.get_best_feats_df(ds_group)
         
@@ -389,15 +390,15 @@ class RFE():
         print(x)
         print(df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().values)
         fig, ax = plt.subplots()
-        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().values, label = 'Contratos Inf', color='g')
-        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().values, label = 'Contratos Obs', color='b')
-        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().values, label = 'Negados Inf', color='r')
+        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().to_numpy(), label = 'Contratos Inf', color='g')
+        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().to_numpy(), label = 'Contratos Obs', color='b')
+        ax.plot(x, df_rfe[approved].groupby('PK_DATREF_XX').INF.mean().sort_index().to_numpy(), label = 'Negados Inf', color='r')
         fig.savefig('final_results.svg', dpi=300)
         
         
         
 
-    @module_logger
+    #@module_logger
     def _get_threshold(self, y_true, y_prob): 
         # initialize a list for score store
         values = []
