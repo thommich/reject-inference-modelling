@@ -3,51 +3,43 @@ from __future__ import annotations
 from typing import Dict, List, Union, Any, Mapping
 import pandas as pd
 import fastparquet as fp
-from .dsmodel import DataSource
-from engines.engines import EnginesInterface
-import enum
+
 from engines import *
+from .dsmodel import DataSource
 from log_utils import setup_logging, log_func
 
 logger = setup_logging(name=__name__)
 module_logger = log_func(__name__)
 
+
 class DataSourcesGroup():
     
     @module_logger                                  
-    def __init__(self, ds_config: Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]], engines_config: Dict[str,Dict[str,List[str]]]):
-        self.enginesEnum = self._init_engines_enum(engines_config)
+    def __init__(self, 
+                 ds_config: Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]], 
+                 engines_config: Dict[str,Dict[str,List[str]]]):
+        
+        self.engines_container = self._init_engines(engines_config)
         self.df_audience, self.data_sources = self._init_data_sources(ds_config)
         self.current_ds: DataSource
         self.top_ranked_feats = []
 
-    @module_logger
-    def _init_engines_enum(self, engines_config: Dict[str, Dict]):
-        enum_members = {k: v for k, v in EnginesInterface(
-            engines_config)._eng_registry.items() if k in engines_config.keys()}
-        
-        EnginesEnum = enum.Enum('EnginesEnum', enum_members, module=engines)
-        #print(EnginesEnum)
-        return EnginesEnum
 
-#    @module_logger
-#    def _init_engines(self, engines_config: Dict[str, Dict]):
-#        eng_enum = self._init_engines_enum(engines_config)
-#
-#        ds_group_engines = {k,v for k,v }
-#        
-#        
-#        EnginesEnum = enum.Enum('EnginesEnum', eng_registry, module=engines)
-#        # print(EnginesEnum)
-#        return EnginesEnum
+    @module_logger
+    def _init_engines(self, config: Dict[str, Dict]):
+        registry = engines.EnginesInterface._eng_registry
+        engines_container = {k:v(config[k]['conn_vars']) for k, v in registry.items() if k in config.keys()}
+        print(engines_container)
+        return engines_container
+
 
     # Returns the entity containing data about the audience used for modelling
     @module_logger
-    def _init_audience_df(self, pub_ds_config: Mapping[str,Any]) -> DataSource:        
-        aud_engine = self.enginesEnum[pub_ds_config['ds_details']['engine']].value
+    def _init_audience_df(self, aud_ds_config: Mapping[str,Any]) -> DataSource:        
+        aud_engine = self.engines_container[aud_ds_config['ds_details']['engine']]
         
-        aud_ds = DataSource(pub_ds_config, aud_engine) # type: ignore
-        self.audience_pk = pub_ds_config['audience_pk']
+        aud_ds = DataSource(aud_ds_config, aud_engine)
+        self.audience_pk = aud_ds_config['audience_pk']
 
         parquet_file_path = './tmp/PQ_DATA_SOURCE_'
         parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
@@ -56,7 +48,6 @@ class DataSourcesGroup():
         data_batch = self.get_data_batch(aud_ds.columns, aud_ds.schema, aud_ds.physical_name)
         
         fp.write(parquet_file, data_batch, compression='SNAPPY')
-
         return aud_ds
     
 
@@ -72,7 +63,7 @@ class DataSourcesGroup():
                                                           
         for ds_info in ds_list:
             config_dict = ds_config[ds_info]
-            new_engine = self.enginesEnum[config_dict['ds_details']['engine']]
+            new_engine = self.engines_container[config_dict['ds_details']['engine']]
 
             new_ds = DataSource(config_dict, new_engine) # type: ignore
 
@@ -83,7 +74,7 @@ class DataSourcesGroup():
 
     #@module_logger
     def get_data_batch(self, columns_to_read: List[str], table_schema: str, table_name: str) -> pd.DataFrame:        
-        new_engine = self.enginesEnum[self.current_ds.engine_name].value
+        new_engine = self.engines_container[self.current_ds.engine_name]
                 
         try:
             data_batch = new_engine.read_data_from_db(
@@ -105,7 +96,7 @@ class DataSourcesGroup():
                               approved_column: str,
                               target_column: str) -> None:
         
-        new_engine = self.enginesEnum[data_source.engine_name].value
+        new_engine = self.engines_container[data_source.engine_name]
         
         new_engine.execute_query(
             new_engine.join_aud_ds_query(
@@ -129,7 +120,7 @@ class DataSourcesGroup():
     
 #if __name__ == "__main__":
 #
-#    engines_config = {'SQLITE': {'conn_vars': {'db_name': 'inference_modelling_test.db'}},
+#    engines_config = {'SQLITE': {'conn_vars': {'db_name': 'inference_modelling_test'}},
 #                      'TERADATA': {'conn_vars': {'host': "10.0.2.15",
 #                                                 'username': 'dbc',
 #                                                 'password': None,
