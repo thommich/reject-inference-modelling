@@ -36,14 +36,14 @@ datasources:
     alias: 'AUDIENCE'
     ds_details:
       engine: 'SQLITE'
-      schema: 'inference_modelling_test.db' 
+      schema: '' 
       physical_name: 'AUDIENCE_TABLE' 
       fields_to_remove: null
   BOOK_BACEN:
     alias: 'BC'
     ds_details:
       engine: 'SQLITE'
-      schema: 'inference_modelling_test' 
+      schema: '' 
       physical_name: 'BOOK_BACEN' 
       fields_to_remove: null
   # BOOK_APONTAMENTOS:
