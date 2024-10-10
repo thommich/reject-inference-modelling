@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
-#from engines.engines import EnginesInterface
-from engines.engines import EnginesInterface#, Engines
+from .engines import EnginesInterface
 import sqlite3
 from jinja2 import Environment, FileSystemLoader
 from log_utils import setup_logging, log_func
@@ -12,16 +11,16 @@ logger = setup_logging(name=__name__)
 module_logger = log_func(__name__)
 
 
-class SQLiteEngine(EnginesInterface, name="SQLITE"):
+class SQLiteEngine(EnginesInterface, eng="SQLITE"):
     
     @module_logger
-    def __init__(self):
-        self.conn_vars = super().engines_cfg[self.name]['conn_vars']
+    def __init__(self, conn_vars: Dict[str,str]):
+        self.conn_vars = conn_vars
         self._conn = None
 
-    @property
-    def name(cls):
-        return cls.name
+#    @property
+#    def name(cls):
+#        return cls.name
 
     #@classmethod
     #@module_logger
@@ -29,10 +28,10 @@ class SQLiteEngine(EnginesInterface, name="SQLITE"):
     def conn(self):
         if self._conn is None:
             try:
-                self._conn = sqlite3.connect(self.conn_vars.get('db_name'))
+                self._conn = sqlite3.connect(self.conn_vars['db_name'])
                 self._conn.row_factory = sqlite3.Row
             except ConnectionError:
-                raise ConnectionError(f"Failed to retrieve a connection for the {self.name} DBMS!")
+                raise ConnectionError(f"Failed to retrieve a connection for the {self.eng} DBMS!")
             
         return self._conn
 
@@ -81,7 +80,9 @@ class SQLiteEngine(EnginesInterface, name="SQLITE"):
         
         cursor = self.conn.cursor()
         
-        columns_query = f"SELECT * FROM {table_schema}.{table_name} LIMIT 1"
+        columns_query = f"SELECT * FROM {table_name} LIMIT 1"
+        
+        print(columns_query)
         
         r = cursor.execute(columns_query).fetchone()
         

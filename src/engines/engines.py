@@ -1,52 +1,31 @@
 from __future__ import annotations
 
-import abc 
+import abc
 from abc import abstractmethod
 from typing import List, Tuple, Dict
 import pandas as pd
 
 
-class EnginesInterface(abc.ABCMeta):
+class EnginesInterface(abc.ABC):
     """ Defines an interface for the implementation Engines.
 
     This interface is designed to be extensible so that the algorithm can be adapted to consume data from 
     virtually any data source. It is defined as a metaclass that should
     """
     _eng_registry = {}
-    engines_cfg = {}
-    
-    def __new__(cls, engines_cfg: Dict, **kwargs):
-        namespace = type(cls).__prepare__(cls.__name__, cls.__bases__, **kwargs)
-        obj = super().__new__(cls, cls.__name__, cls.__bases__, namespace, **kwargs)
-        obj.engines_cfg = engines_cfg
-        return obj
         
-
-    def __init_subclass__(cls, name=None, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if name is not None:
-            cls._eng_registry[name] = cls
+    @classmethod
+    def __init_subclass__(cls, eng=None, **kwargs):
+        super().__init_subclass__()
+        if eng is not None:
+            #super(cls,cls)._eng_registry[eng] = cls
+            cls._eng_registry[eng] = cls
+            cls.eng = cls
     
     @classmethod
     @abstractmethod
     def conn(cls):
         raise NotImplementedError
-
-    # @classmethod
-    # def __subclasshook__(cls, subclass):
-    #     return (hasattr(subclass, 'get_db_connection') and 
-    #             callable(subclass.get_db_connection) and 
-    #             hasattr(subclass, 'close_db_connection') and 
-    #             callable(subclass.close_db_connection) and
-    #             hasattr(subclass, 'execute_query') and 
-    #             callable(subclass.execute_query) and
-    #             hasattr(subclass, 'read_data_from_db') and 
-    #             callable(subclass.read_data_from_db) and
-    #             hasattr(subclass, 'get_table_shape') and 
-    #             callable(subclass.get_table_shape) and                               
-    #             hasattr(subclass, 'get_table_columns') and 
-    #             callable(subclass.get_table_columns) or 
-    #             NotImplemented)
     
 
     @abc.abstractmethod
@@ -86,3 +65,5 @@ class EnginesInterface(abc.ABCMeta):
     @abc.abstractmethod
     def read_data_batch(self, **kwargs) -> str:
         raise NotImplementedError
+
+    

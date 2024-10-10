@@ -6,29 +6,18 @@ from getpass import getpass
 import pandas as pd
 import teradatasql
 from engines.engines import EnginesInterface
-import logging
+from log_utils import setup_logging, log_func
 
-# Create Logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create stream handler
-handler = logging.StreamHandler()
-    
-handler.setLevel(logging.INFO)
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-
-# Add handler to Logger
-logger.addHandler(handler)
-
+logger = setup_logging(name=__name__)
+module_logger = log_func(__name__)
 
 
 class TeradataEngine(EnginesInterface, name='TERADATA'): 
 
-    def __init__(self):
-        self.conn_vars = super().engines_cfg[self.name]['conn_vars']
-        self._conn = self.get_db_connection()
+    @module_logger
+    def __init__(self, conn_vars: Dict[str,str]):
+        self.conn_vars = conn_vars
+        self._conn = None
 
     @property
     def name(cls):
