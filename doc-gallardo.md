@@ -45,6 +45,10 @@ O código utilizado para construção do público de desenvolvimento pode ser co
 Quando se trata de modelagem de risco de crédito para concessão de produtos financeiros (denominados geralmente "Application Scoring Models") é comum observarmos o desenvolvimento de um modelo auxiliar com o intuito de inferir a variável resposta para clientes que tiveram o crédito negado nas referências de desenvolvimento. Estes clientes não efetuaram a contratação do produto, fato que torna impossível a análise de janela de performance que é indispensável para o cáculo da variável resposta. A introdução de clientes negados nos modelos de risco de crédito é encorajada com o objetivo de controlar o viés de seleção gerado a partir da análise histórica dos dados somente de clientes aprovados, o que acaba gerando uma distribuição de dados distorcida, considerando-se que não é representativa da população que o modelo deverá escorar após treinado.
 Ao analisarmos as características do público do modelo Gallardo percebemos no grupo de clientes FAROL VERMELHO | SEM PROPOSTA | CONTRATO BC as características básicas necessárias para substituição de uma inferência de negados, haja vista a negativa de concessão de crédito para estes clientes aliada à existência de um contrato de produto que possibilita a análise da janela de performance. O modelo Gallardo, portanto, foi desenvolvido sem a utilização do modelo auxiliar de inferência de negados, usando como motivador a ideia de que adicionando o grupo de clientes citado ao conjunto de dados de desenvolvimento do modelo é possível anular o viés de seleção.
 
+Foi realizado um experimento utilizando o modelo de inferência treinado durante o desenvolvimento do modelo anterior de Financiamento de Veículos, o modelo Focus. Neste experimento, foi utilizado o público de desenvolvimento do Gallardo e uma amostra de indivíduos dos grupos SEM CONTRATO foi escorada utilizando o modelo de inferência do Focus. O experimento consistiu no desenvolvimento de uma sequência de modelos com diferentes conjuntos de dados de treinamento onde tais conjuntos eram formados pelo total de indivíduos com variável resposta observada (contrato identificado no Itaú ou no Mercado) somados a diferentes proporções de indivíduos cuja variável resposta foi inferida conforme descrito acima. As proporções variaram de 0% a 35% em intervalos de 5% e foram avaliados os valores de gini nas diferentes subpopulações do público para cada um dos modelos. O gráfico abaixo ilustra o resultado do experimento:
+
+
+Foi possível verificar que, à medida que a proporção do público com variável resposta inferida aumenta no conjunto de dados de teste, a única subpopulação que se benificia em termos de aumento no valor de gini é propriamente a destes indivíduos que, por sua vez, acaba inflando o valor de gini no geral, quando medido para o público completo do modelo. Concluiu-se então que a utilização do modelo de inferência de negados e a inclusão dos dados escorados por este no conjunto de treinamento não produziu nenhum aumento no nível de discriminação dos modelos que justificasse o desenvolvimento extra.
 
 FAROL VERM  | SEM PROPOSTA | SEM CONTRATO
 **FAROL VERM  | SEM PROPOSTA | CONTRATO BC**
@@ -55,3 +59,26 @@ FAROL VERDE | PROPOSTA NEGADA | SEM CONTRATO
 FAROL VERDE | PROPOSTA APROVADA | SEM CONTRATO
 FAROL VERDE | PROPOSTA APROVADA | CONTRATO BC
 **FAROL VERDE | PROPOSTA APROVADA | CONTRATO ITAÚ**
+
+
+
+
+
+# MODELAGEM
+## SELEÇÃO DE VARIÁVEIS
+A seleção das variáveis explicativas que compõem o modelo Gallardo foi realizada em uma sequência de etapas, confrme descritas abaixo em maior detalhe.
+
+### PRÉ SELEÇÃO DAS VARIÁVEIS DOS BOOKS NPM
+
+### DESENVOLVIMENTO DE VARIÁVEIS A PARTIR DE NOVOS CONJUNTOS DE DADOS
+
+### RFE
+
+### ANÁLISE E SELEÇÃO MANUAL
+
+## VARIÁVEIS FINALISTAS
+As variáveis
+
+## MATRIZ DE CORRELAÇÃO
+
+## MODELO FINAL
