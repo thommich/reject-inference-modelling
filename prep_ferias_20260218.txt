@@ -1,0 +1,32 @@
+- Ajustar notebook cálculos Gallardo (CORR/NCORR)
+- Ajustar notebook validações Gallardo
+- Ajustar notebook cálculos Crediário
+- Ajustar notebook cálculos LAIR
+
+
+
+- VEÍCULOS
+	- GALLARDO
+		- Estudos CORR/NCORR
+		- Validações pré distribuição
+		- Implantação do modelo/IU Lotus
+
+
+- CREDIÁRIO
+	- Estudos Amarelo vs. Bordô
+
+- MICROCRÉDITO
+	- Material modelo Especialista
+
+
+
+- AINDA CABE COLOCAR NO REPOSITÓRIO ESTUDOS GIT
+	- Variáveis PDCA de Veículos
+	- Explainable AI
+	- Primeira camada SUR Veículos
+
+
+
+
+- Esquema pra facilitar teste de novas variáveis
+- Esquema pra facilitar comparação de performance entre modelos desafiantes

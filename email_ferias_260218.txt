@@ -1,0 +1,45 @@
+﻿Boa tarde pessoal!
+
+
+A partir de amanhã tem início meu período de férias que deve durar 18 dias (de 19/02/2026 a 08/02/2026). Vai ser rapidinho, e na 2ª semana de março/26 já devo estar de volta com vocês... mas para que tudo transcorra da melhor maneira possível durante minha ausência deixo listadas abaixo as últimas iniciativas que estive tocando pelo nosso Squad bem como os links para quaisquer documentações/códigos/planilhas do excel que possam ser úteis caso alguém precise atuar em algum desses pontos durante este período.
+
+
+VEÍCULOS
+- Estudos CORR/NCORR: referente aos estudos comparativos nos públicos correntista e não correntista do modelo de concessão de Financiamento de Veículos que estamos realizando para avaliar a performance do modelo Focus (modelo vigente, atualmente eleito para 90% do público total) e potencial performance do Gallardo (modelo já produtivo, atualmente eleito para 10% do público total) em resposta aos questionamentos levantados pelos últimos pontos de performance obtidos (de janela curta, 30m2 e 30m3) que mostram um aumento considerável na inadimplência MoM principalmente no recorte de clientes não correntistas com contratos firmados em Lojas Independentes. Os estudos realizados nessa frente tem tido como objetivo central mostrar que as principais métricas do modelo Focus vêm se mantendo estáveis ao longo de todo seu período de utilização e principalmente nas safras mais recentes, indicando que as causas para esse aumento súbito na inadimplência do subgrupo em questão pode estar além de aspectos ligados exclusivamente ao modelo de concessão. Além disso, existe também uma discussão acontecendo em paralelo que visa avaliar a performance do Gallardo nesse público não correntista/Lojas Independentes para entender qual seria o impacto de entrarmos com uma proporção maior do modelo para esse público já de ínicio (em contraste aos 10%/90% adotado para o público em geral até o momento) e o quanto essa ação seria capaz de mitigar o aumento de inadimplência observado. Os arquivos mais importantes referentes a essa iniciativa são os seguintes:
+        - Marcação de origem dos clientes da pré análise: código utilizado para marcar a base de pré análise de Financiamento de Veículos com a devida origem levando em conta sua avaliação no Farol da PUC (vermelho/verde), o status da proposta de crédito quando realizada (sem proposta/prop. aprovada/prop. negada), e a existência ou não de contrato de Financiamento tanto interno quanto no mercado (sem contrato/contrato Itaú/contrato BACEN);
+        - Escoragem do Gallardo e marcação dos GHs: código utilizado para escoragem do modelo Gallardo e marcação dos GHs baseado nos cut points;
+        - Atualização das marcações de origem dos clientes da pré análise + cálculos de performance e ginis do Focus: código utilizado para atualizar a marcação de origem dos clientes da pré análise de safras mais recentes dados os novos pontos de performance disponíveis. Aqui também é possível encontrar os códigos utilizados para calcular as métricas do Focus (valores de inadimplência e gini para diferentes targets, marcações de correntista/não correntista e canais de contratação...) e para gerar o cubo que serve de origem para as análises de volumetrias, inadimplência e estabilidade ao longo das safras que estão em excel;
+        - Excel com as análises Corr/Ncorr: arquivo Excel com os dados mais recentes das análises comparativas de concessão de financiamento de veículos para correntistas e não correntistas;
+
+
+
+
+- Modelo Gallardo: tudo o que se refere ao novo modelo de concessão de Financiamento de Veículos, cuja implantação é recente e que encontra-se atualmente em piloto para 10% do total de CPFs nível Bureau. Os arquivos e repositórios mais importantes referentes a essa iniciativa são os seguintes:
+        - Documentação do modelo: aqui é possível encontrar uma descrição detalhada do processo de desenvolvimento do modelo bem como links para os principais repositórios GIT relacionados ao modelo e para o Cadastro MRM;
+        - Repositório GIT de desenvolvimento do modelo: contém o código para todos os testes realizados durante o desenvolvimento, passo a passo para reproduzir a criação e teste de discriminação de novas variáveis, variáveis de fornecedores, dinâmica de seleção de variáveis finais, modelagem, definição dos GHs e estudos comparativos com o modelo vigente; 
+        - Repositório GIT de implantação na IU Lotus: contém o código utilizado para colocar o modelo em produção através da Plataforma IU Lotus;
+- Repositório GIT da Superspec do Gallardo: contém o código utilizado pela Plataforma Sirius para gerar a Superspec do Gallardo diariamente;
+        - Repositório GIT do processo de eleição de veículos: contem o código responsável por gerar a tabela Meridian de Veículos, que traz a proporção atualmente definida de rollout do modelo mais atual (nesse momento, é o processo que gera a tabela com 10% de registros avaliados pelo Gallardo + 90% avaliados pelo Focus)
+        - Repositório GIT do processo de distribuição do modelo de veículos: 
+        - Diretório de estudos e resultados: diretório compartilhado que reúne os principais ppts e xmls sobre o modelo;
+        - Código de validação das referências do Gallardo para distribuição: notebook para realizar a validação de novas referências do Gallardo de maneira simples, facilitando a aprovação dos processos que seguram a base em modo parada;
+
+
+- Estudo MFL/ponto de gini: estudo realizado para tentar expressar o ganho obtido na troca de um modelo de Financiamento de Veículos por outro de uma geração mais nova (neste caso, a troca do EcoSport pelo Focus) em termos de indicadores de rentabilidade. O estudo teve como objetivo analisar o período em que ambos os modelos rodaram paralelamente em produção para buscar determinar o quanto cada ponto de gini a mais introduzido pela utilização do novo modelo se traduzia em R$ de MFL (margem financeira líquida) para o resultado da área de Veículos e do Banco no geral. Os arquivos mais importantes referentes a essa iniciativa são os seguintes:
+- Indicadores de performance dos modelos e rentabilidade dos contratos: código responsável por calcular as métricas e os valores agregados necessários para realização das análises posteriores;
+- Excel de consolidação: arquivo que utiliza os dados gerados pelo código indicado acima e consolida os cálculos necessários para obtenção da estimativa proposta;
+- PPT com o racional: arquivo que contém um resumo do racional utilizado para realização do estudo contendo valores e exemplos para melhor entendimento;
+
+
+
+
+
+
+CREDIÁRIO
+- Estudos Amarelo vs. Bordô: referente aos estudos comparativos que realizamos entre os modelos de concessão de Crediário Amarelo e Bordô que continuam sendo usados paralelamente em produção, com o Bordô rodando para ~20% do público do Crediário mesmo após quase 1 ano de início de piloto. No decorrer dos estudos realizados verificamos que o Bordô apresentava taxas de inadimplência maiores que as do Amarelo para os melhores GHs do modelo de maneira consistente. Porém, levando em conta o reduzido tamanho amostral do público controle que tínhamos a disposição, a ausência de um histórico mais detalhado das fases de desenvolvimento do Bordô (onde aparentemente as taxas mais altas de inadimplência do modelo eram de fato o esperado, mas não conseguimos averiguar nem o porquê e nem os patamares esperados), a implantação seguida de rollout do modelo Boreal (visão cliente) durante o mesmo período, os diferentes testes realizados pelo time de políticas com o público piloto do modelo Bordô e a realização de estudos recentes apresentados pelo time de políticas que prevêem bons resultados para o produto aliando uma nova política de concessão de Crediário (proposta por eles) calibrada aos scores do Bordô, nossas análises tomaram o objetivo de tentar garantir ao máximo a qualidade do modelo Bordô (estabilidade dos GHs/poder de discriminação…) do que efetivamente irmos pelo caminho mais comum de garantirmos maior poder de discriminação/menor inadimplência nos melhores GHs para o modelo mais recente. Os arquivos e repositórios mais importantes referentes a essa iniciativa são os seguintes:
+
+
+
+
+MICROCRÈDITO
+- Modelo de rating do especialista do Microcrédito: referente aos estudos comparativos que realizamos entre os modelos de concessão de Crediário Amarelo e Bordô que continuam sendo usados paralelamente em produção, com o Bordô rodando para ~20% do público do Crediário mesmo após quase 1 ano de início de piloto. No decorrer dos estudos realizados verificamos que o B
