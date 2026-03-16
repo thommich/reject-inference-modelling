@@ -1,0 +1,16 @@
+https://explained.ai/rf-importance
+
+
+
+
+https://vitaliset.github.io/boruta/
+https://www.blog.trainindata.com/is-boruta-dead/
+https://github.com/scikit-learn-contrib/boruta_py
+https://medium.com/geekculture/boruta-feature-selection-explained-in-python-7ae8bf4aa1e7
+
+
+https://github.com/Ekeany/Boruta-Shap
+https://amirali-n.github.io/BorutaFeatureSelectionWithShapAnalysis/
+
+
+
