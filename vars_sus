@@ -1,0 +1,193 @@
+WITH anos_base AS (
+  SELECT MAX(ano) AS ano_max FROM sim_obitos
+),
+
+periodo AS (
+  SELECT ano_max - 2 AS ano_inicio, ano_max FROM anos_base
+)
+
+
+, mortalidade_mun_raw AS (
+  SELECT
+    s.uf,
+    s.municipio,
+    s.faixa_etaria,
+    SUM(s.obitos) AS obitos,
+    SUM(p.populacao) AS populacao
+  FROM sim_obitos s
+  JOIN ibge_populacao p
+    ON s.uf = p.uf
+   AND s.municipio = p.municipio
+   AND s.ano = p.ano
+   AND s.faixa_etaria = p.faixa_etaria
+  JOIN periodo t
+    ON s.ano BETWEEN t.ano_inicio AND t.ano_max
+  GROUP BY 1,2,3
+)
+
+
+
+, mortalidade_uf_raw AS (
+  SELECT
+    uf,
+    faixa_etaria,
+    SUM(obitos) AS obitos,
+    SUM(populacao) AS populacao
+  FROM mortalidade_mun_raw
+  GROUP BY 1,2
+)
+
+
+
+, mortalidade_br AS (
+  SELECT
+    faixa_etaria,
+    SUM(obitos) * 1.0 / SUM(populacao) AS taxa_br
+  FROM mortalidade_uf_raw
+  GROUP BY 1
+)
+
+
+
+, mortalidade_mun_smooth AS (
+  SELECT
+    m.uf,
+    m.municipio,
+    m.faixa_etaria,
+
+    (m.obitos + 50 * b.taxa_br) /
+    (m.populacao + 50) AS taxa_mortalidade
+
+  FROM mortalidade_mun_raw m
+  JOIN mortalidade_br b
+    ON m.faixa_etaria = b.faixa_etaria
+)
+
+
+
+, mortalidade_final AS (
+  SELECT
+    COALESCE(m.municipio, 'UNKNOWN') AS municipio,
+    m.uf,
+    m.faixa_etaria,
+
+    CASE
+      WHEN m.populacao < 10000 THEN
+        (u.obitos * 1.0 / u.populacao)
+      ELSE
+        m.taxa_mortalidade
+    END AS taxa_mortalidade
+
+  FROM mortalidade_mun_raw m
+  LEFT JOIN mortalidade_mun_smooth ms
+    ON m.uf = ms.uf
+   AND m.municipio = ms.municipio
+   AND m.faixa_etaria = ms.faixa_etaria
+  LEFT JOIN mortalidade_uf_raw u
+    ON m.uf = u.uf
+   AND m.faixa_etaria = u.faixa_etaria
+)
+
+
+
+, stats AS (
+  SELECT
+    faixa_etaria,
+    AVG(taxa_mortalidade) AS media,
+    STDDEV(taxa_mortalidade) AS desvio
+  FROM mortalidade_final
+  GROUP BY 1
+),
+
+mortalidade_z AS (
+  SELECT
+    m.*,
+    (m.taxa_mortalidade - s.media) / s.desvio AS z_mortalidade
+  FROM mortalidade_final m
+  JOIN stats s
+    ON m.faixa_etaria = s.faixa_etaria
+)
+
+
+
+, mortalidade_bins AS (
+  SELECT
+    *,
+
+    CASE
+      WHEN z_mortalidade <= -1.0 THEN 'baixo'
+      WHEN z_mortalidade <= 0.5 THEN 'medio_baixo'
+      WHEN z_mortalidade <= 1.5 THEN 'medio_alto'
+      ELSE 'alto'
+    END AS bin_mortalidade
+
+  FROM mortalidade_z
+)
+
+
+
+, internacoes_raw AS (
+  SELECT
+    uf,
+    municipio,
+    COUNT(*) AS internacoes
+  FROM sih_internacoes
+  JOIN periodo t
+    ON ano BETWEEN t.ano_inicio AND t.ano_max
+  WHERE idade >= 60
+  GROUP BY 1,2
+),
+
+pop_60 AS (
+  SELECT
+    uf,
+    municipio,
+    SUM(populacao) AS pop_60
+  FROM ibge_populacao
+  JOIN periodo t
+    ON ano BETWEEN t.ano_inicio AND t.ano_max
+  WHERE faixa_etaria IN ('60-69','70-79','80+')
+  GROUP BY 1,2
+),
+
+internacao_final AS (
+  SELECT
+    i.uf,
+    i.municipio,
+
+    (i.internacoes + 50 * 0.01) /
+    (p.pop_60 + 50) AS taxa_internacao
+
+  FROM internacoes_raw i
+  JOIN pop_60 p
+    ON i.uf = p.uf
+   AND i.municipio = p.municipio
+)
+
+
+
+
+SELECT
+  c.*,
+
+  m.taxa_mortalidade,
+  m.z_mortalidade,
+  m.bin_mortalidade,
+  i.taxa_internacao,
+
+  -- interações
+  c.idade * m.taxa_mortalidade AS idade_mortalidade,
+  c.idade * m.z_mortalidade AS idade_zscore,
+  c.flag_inss_invalidez * i.taxa_internacao AS invalidez_internacao,
+
+  -- índice final
+  (0.6 * m.z_mortalidade + 0.4 * i.taxa_internacao) AS indice_risco
+
+FROM clientes c
+LEFT JOIN mortalidade_bins m
+  ON c.uf = m.uf
+ AND c.municipio = m.municipio
+ AND c.faixa_etaria = m.faixa_etaria
+LEFT JOIN internacao_final i
+  ON c.uf = i.uf
+ AND c.municipio = i.municipio;
