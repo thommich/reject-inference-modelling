@@ -191,3 +191,191 @@ LEFT JOIN mortalidade_bins m
 LEFT JOIN internacao_final i
   ON c.uf = i.uf
  AND c.municipio = i.municipio;
+
+
+
+
+
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'raw_features_table'
+  AND column_name NOT IN ('id', 'ref_date')
+ORDER BY ordinal_position;
+
+
+
+
+
+SELECT 
+    'SELECT ref_date, ''' || column_name || ''' AS feature, ' || column_name || ' AS value FROM raw_features_table'
+FROM information_schema.columns
+WHERE table_name = 'raw_features_table'
+  AND column_name NOT IN ('id', 'ref_date')
+ORDER BY ordinal_position;
+
+
+
+
+
+WITH long_table AS (
+
+    -- 🔹 AUTO-GENERATED UNPIVOT (replace with your generated SQL)
+    SELECT ref_date, 'feature_1' AS feature, feature_1 AS value FROM raw_features_table
+    UNION ALL
+    SELECT ref_date, 'feature_2', feature_2 FROM raw_features_table
+    UNION ALL
+    SELECT ref_date, 'feature_3', feature_3 FROM raw_features_table
+
+),
+
+filtered AS (
+    SELECT *
+    FROM long_table
+    WHERE ref_date >= date_format(date_add('day', -6, current_date), '%Y%m%d')
+),
+
+-- 🔹 Aggregated metrics
+aggregated AS (
+    SELECT
+        ref_date,
+        feature,
+        AVG(value) AS avg_value,
+        MIN(value) AS min_value,
+        MAX(value) AS max_value,
+        1 - (COUNT_IF(value IS NULL) * 1.0 / COUNT(*)) AS completeness
+    FROM filtered
+    GROUP BY ref_date, feature
+),
+
+-- 🔹 Stack metrics
+metrics_long AS (
+    SELECT ref_date, feature, 'avg' AS metric, avg_value AS value FROM aggregated
+    UNION ALL
+    SELECT ref_date, feature, 'min', min_value FROM aggregated
+    UNION ALL
+    SELECT ref_date, feature, 'max', max_value FROM aggregated
+    UNION ALL
+    SELECT ref_date, feature, 'completeness', completeness FROM aggregated
+),
+
+-- 🔹 Variation
+with_variation AS (
+    SELECT
+        *,
+        (value - LAG(value) OVER (PARTITION BY feature, metric ORDER BY ref_date))
+        / NULLIF(LAG(value) OVER (PARTITION BY feature, metric ORDER BY ref_date), 0)
+        AS pct_variation
+    FROM metrics_long
+),
+
+-- 🔹 Rolling stats
+with_rolling AS (
+    SELECT
+        *,
+        AVG(pct_variation) OVER (
+            PARTITION BY feature, metric
+            ORDER BY ref_date
+            ROWS BETWEEN 4 PRECEDING AND 1 PRECEDING
+        ) AS rolling_mean,
+        STDDEV(pct_variation) OVER (
+            PARTITION BY feature, metric
+            ORDER BY ref_date
+            ROWS BETWEEN 4 PRECEDING AND 1 PRECEDING
+        ) AS rolling_std
+    FROM with_variation
+),
+
+-- 🔹 Z-score anomaly
+zscore_calc AS (
+    SELECT
+        *,
+        CASE
+            WHEN rolling_std IS NOT NULL
+             AND ABS(pct_variation - rolling_mean) > 3 * rolling_std
+            THEN 1 ELSE 0
+        END AS is_anomaly,
+        ABS(pct_variation - rolling_mean) / NULLIF(rolling_std, 0) AS z_score
+    FROM with_rolling
+),
+
+-- 🔹 PSI BINNING
+binned AS (
+    SELECT
+        ref_date,
+        feature,
+        NTILE(10) OVER (PARTITION BY feature ORDER BY value) AS bin
+    FROM filtered
+),
+
+dist AS (
+    SELECT
+        ref_date,
+        feature,
+        bin,
+        COUNT(*) * 1.0 / SUM(COUNT(*)) OVER (PARTITION BY ref_date, feature) AS pct
+    FROM binned
+    GROUP BY ref_date, feature, bin
+),
+
+psi_calc AS (
+    SELECT
+        d1.ref_date,
+        d1.feature,
+        SUM(
+            (d1.pct - d2.pct) *
+            LN(d1.pct / NULLIF(d2.pct, 0))
+        ) AS psi
+    FROM dist d1
+    LEFT JOIN dist d2
+      ON d1.feature = d2.feature
+     AND d1.bin = d2.bin
+     AND d2.ref_date = date_format(date_add('day', -1, date_parse(d1.ref_date, '%Y%m%d')), '%Y%m%d')
+    GROUP BY d1.ref_date, d1.feature
+),
+
+-- 🔹 KS calculation
+cdf AS (
+    SELECT
+        ref_date,
+        feature,
+        value,
+        CUME_DIST() OVER (PARTITION BY ref_date, feature ORDER BY value) AS cdf
+    FROM filtered
+),
+
+ks_calc AS (
+    SELECT
+        c1.ref_date,
+        c1.feature,
+        MAX(ABS(c1.cdf - c2.cdf)) AS ks_stat
+    FROM cdf c1
+    JOIN cdf c2
+      ON c1.feature = c2.feature
+     AND c2.ref_date = date_format(date_add('day', -1, date_parse(c1.ref_date, '%Y%m%d')), '%Y%m%d')
+     AND c1.value = c2.value
+    GROUP BY c1.ref_date, c1.feature
+)
+
+-- 🔥 FINAL OUTPUT
+SELECT
+    z.ref_date,
+    z.feature,
+    z.metric,
+    z.value,
+    z.pct_variation,
+    z.rolling_mean,
+    z.rolling_std,
+    z.is_anomaly,
+    z.z_score,
+    p.psi,
+    k.ks_stat
+
+FROM zscore_calc z
+LEFT JOIN psi_calc p
+  ON z.ref_date = p.ref_date AND z.feature = p.feature
+LEFT JOIN ks_calc k
+  ON z.ref_date = k.ref_date AND z.feature = k.feature
+
+-- ✅ ONLY TODAY (incremental)
+WHERE z.ref_date = date_format(current_date, '%Y%m%d')
