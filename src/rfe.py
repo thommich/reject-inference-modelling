@@ -152,21 +152,22 @@ class RFE():
     def narrow_down_feat_candidates_univar(self, ds_group: DataSourcesGroup) -> List[str]:
         ##INITIALIZE LOOP VARIABLES
         #Create variables for the main DataFrames to be passed around
+        
 
         #Calculate total number of batches and start reading data from the DB
-        num_total_batches = math.ceil((ds_group.current_ds.get_columns_count() - ds_group.df_audience.get_columns_count())/self.book_cols_batch_size)
+        num_total_batches = math.ceil((ds_group.get_current_ds().get_columns_count() - ds_group.df_audience.get_columns_count())/self.book_cols_batch_size)
         
         #Trigger DB join pub + book
-        ds_group.left_join_audience_tb(ds_group.current_ds, self.mob)
+        ds_group.left_join_audience_tb(ds_group.get_current_ds(), self.mob)
 
         #Initialize list to hold intermediate/final results
         sorted_results = pd.DataFrame()
         #Iterates through each batch of columns
         for index in tqdm(range(num_total_batches), leave=False):
-            columns_to_read = ds_group.current_ds.columns[index*self.book_cols_batch_size: (index+1)*self.book_cols_batch_size]
+            columns_to_read = ds_group.get_current_ds().columns[index*self.book_cols_batch_size: (index+1)*self.book_cols_batch_size]
 
             #READS DATA FROM THE DATABASE
-            df = ds_group.current_ds.read_data_batch(columns_to_read, ds_group.get_audience_pk())
+            df = ds_group.get_current_ds().read_data_batch(columns_to_read, ds_group.get_audience_pk())
 
             #Filter analytical columns and add target and approved columns
             analytical_vars = [col for col in df.columns.to_list() if col in df.columns and col not in ds_group.df_audience()]
@@ -203,7 +204,7 @@ class RFE():
         df_rfe = df_aud
         for feature_book in ds_group.data_sources:
             ds_group.current_ds = ds_group.data_sources[feature_book]
-            ds = ds_group.current_ds
+            ds = ds_group.get_current_ds()
 
             df, _ = self._read_data_from_pqfile(ds.alias, ds.top_rnkd_feats, ds_group.get_df_audience().get_columns())
 

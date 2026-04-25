@@ -34,7 +34,7 @@ class DataSourcesGroup():
     def __init__(self, ds_config: Dict[str,Dict[str,Union[str, Dict[str,Union[str,List[str], None]]]]], engines_config: Dict[str,Dict[str,List[str]]]):
         self.engines_factory = self.__init_engines_factory(engines_config)
         self.df_audience, self.data_sources = self.__init_data_sources(ds_config)
-        self.current_ds: DataSource
+        self.current_ds: str
         self.top_ranked_feats = []
 
 
@@ -121,7 +121,7 @@ class DataSourcesGroup():
 
 
     def get_current_ds(self) -> DataSource:
-        return self.current_ds
+        return self.data_sources[self.current_ds]
 
 
 
