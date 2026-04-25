@@ -1,29 +1,15 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple, List, Union, Any, Type, Mapping, Literal, MutableSequence
-import copy
+from typing import Dict, List, Union, Any, Mapping
 import pandas as pd
 import fastparquet as fp
-from engines.engines import EngineInstanceProvider, EnginesInterface
-from engines.teradata import TeradataEngineBuilder
-from engines.hadoop import HadoopEngineBuilder
+
+from engines import *
 from .dsmodel import DataSource
-#import teradatasql
-import logging
+from log_utils import setup_logging, log_func
 
-# Create Logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create stream handler
-handler = logging.StreamHandler()
-    
-handler.setLevel(logging.INFO)
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-
-# Add handler to Logger
-logger.addHandler(handler)
+logger = setup_logging(name=__name__)
+module_logger = log_func(__name__)
 
 
 class DataSourcesGroup():
@@ -38,88 +24,95 @@ class DataSourcesGroup():
         self.top_ranked_feats = []
 
 
-    #Registers the builders for all the possible engines declared on the config file
-    def __init_engines_factory(self, eng_params: Dict[str,Dict]) -> EngineInstanceProvider:
-        engines_factory = EngineInstanceProvider(eng_params)
-        engines_factory.register_builder('TERADATA', TeradataEngineBuilder)
-        #engines_factory.register_builder('HADOOP', HadoopEngineBuilder)
-        return engines_factory
+    @module_logger
+    def _init_engines(self, config: Dict[str, Dict]):
+        registry = engines.EnginesInterface._eng_registry
+        engines_container = {k:v(config[k]['conn_vars']) for k, v in registry.items() if k in config.keys()}
+        print(engines_container)
+        return engines_container
+
 
     # Returns the entity containing data about the audience used for modelling
-    def _init_audience_df(self, pub_ds_config: Mapping[str,Any]) -> DataSource:
-        aud_engine = self.engines_factory.get(pub_ds_config['ds_details']['engine'])
+    @module_logger
+    def _init_audience_df(self, aud_ds_config: Mapping[str,Any]) -> DataSource:        
+        aud_engine = self.engines_container[aud_ds_config['ds_details']['engine']]
         
-        aud_ds = DataSource(pub_ds_config, aud_engine) 
-        setattr(aud_ds, 'audience_pk', pub_ds_config['audience_pk'])
+        aud_ds = DataSource(aud_ds_config, aud_engine)
+        self.audience_pk = aud_ds_config['audience_pk']
 
-        # parquet_file_path = '/temp/PQ_DATA_SOURCE_'
-        # parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
-        # fp.write(parquet_file, aud_ds.data_batch, compression='SNAPPY', append=True)
-
-        return aud_ds 
+        parquet_file_path = './tmp/PQ_DATA_SOURCE_'
+        parquet_file = ''.join([parquet_file_path, aud_ds.alias.upper(), '.parquet'])
+        
+        self.current_ds = aud_ds
+        data_batch = self.get_data_batch(aud_ds.columns, aud_ds.schema, aud_ds.physical_name)
+        
+        fp.write(parquet_file, data_batch, compression='SNAPPY')
+        return aud_ds
     
 
     #Binds the data source parameters to a different instance of DataSource each
-    def __init_data_sources (self, ds_config: Dict[str,Any]) -> Tuple:
-      
+    @module_logger
+    def _init_data_sources (self, ds_config: Dict[str,Any]):# -> Tuple:
         aud_ds_config = ds_config['AUDIENCE_TABLE']
         
         ds_audience = self._init_audience_df(aud_ds_config)
         
         data_sources_dict = {}
-        data_sources_dict[ds_audience.alias] = ds_audience
         ds_list = [ds_info for ds_info in ds_config if ds_info != 'AUDIENCE_TABLE']
-                                                           
+                                                          
         for ds_info in ds_list:
             config_dict = ds_config[ds_info]
-            new_engine = self.engines_factory.get(config_dict['ds_details']['engine'])
+            new_engine = self.engines_container[config_dict['ds_details']['engine']]
 
-            new_ds = DataSource(config_dict, new_engine)
+            new_ds = DataSource(config_dict, new_engine) # type: ignore
 
             data_sources_dict[new_ds.alias] = new_ds
 
         return ds_audience, data_sources_dict
 
 
-
-
-
-    #Return the audience data
-    def get_df_audience(self) -> DataSource:
-        return copy.deepcopy(self.df_audience)       
-    
-
-    def get_audience_pk(self) -> List[str]:
-        return getattr(self.get_df_audience(), 'audience_pk')
-    
-    
-    def get_data_batch(self, columns_to_read: MutableSequence[str]) -> pd.DataFrame:
-        data_source: DataSource = getattr(self, 'current_ds')
+    #@module_logger
+    def get_data_batch(self, columns_to_read: List[str], table_schema: str, table_name: str) -> pd.DataFrame:        
+        new_engine = self.engines_container[self.current_ds.engine_name]
+                
+        try:
+            data_batch = new_engine.read_data_from_db(
+                            new_engine.read_data_batch(
+                                        columns_list=columns_to_read, 
+                                        primary_key=self.audience_pk,
+                                        table_schema=table_schema, 
+                                        table_name= table_name))
+        except Exception as err:
+            raise err
         
-        df = data_source.read_data_batch(columns_to_read, self.get_audience_pk())
-
-        df['PK_DATREF_XX'] = pd.to_datetime(df['PK_DATREF_XX'])
-        df['PK_DATVER_XX'] = pd.to_datetime(df['PK_DATVER_XX'])
-
-        return df
+        return data_batch
 
 
-    def left_join_audience_tb(self, data_source: DataSource, mob: int) -> None:
-        query = f"""
-            CREATE TABLE {data_source.schema}.BASE_INFERENCIA_MLTOOLS_{data_source.alias} AS (
-                SELECT 
-                    A.*
-                FROM {self.get_df_audience().get_schema()}.{self.get_df_audience().get_physical_name()} AS B
-                LEFT JOIN {data_source.schema}.{data_source.physical_name} AS A
-                    ON A.PK_RIZNUMDOC_XX = B.RIZNUMDOC_XX
-                    AND A.PK_DATREF_XX = ADD_MONTHS(B.PK_DATREF_XX, {mob})
-                    AND A.PK_TPP_XX = B.PK_TPP_XX
-            ) WITH DATA PRIMARY INDEX (PK_RIZNUMDOC_XX,PK_DATREF_XX)
-        """
-        new_engine = self.engines_factory.get(data_source.engine_name)
-        return new_engine.execute_query(query)
+    @module_logger
+    def left_join_audience_tb(self, 
+                              data_source: DataSource, 
+                              mob: int,
+                              approved_column: str,
+                              target_column: str) -> None:
+        
+        new_engine = self.engines_container[data_source.engine_name]
+        
+        new_engine.execute_query(
+            new_engine.join_aud_ds_query(
+                                        aud_ds_physical_name=self.df_audience.physical_name,
+                                        audience_pk = self.audience_pk,
+                                        ds_alias=data_source.alias,
+                                        ds_schema=data_source.schema, 
+                                        ds_physical_name=data_source.physical_name,
+                                        bk_features = [feat for feat in data_source.columns if feat not in self.audience_pk],
+                                        approved_column = approved_column,
+                                        target_column = target_column,
+                                        mob=mob
+                                        ))
+        return
 
 
+    #@module_logger
     def get_current_ds(self) -> DataSource:
         return self.data_sources[self.current_ds]
 
@@ -154,7 +147,15 @@ class DataSourcesGroup():
 #     with uow:
 #         accounts = uow.data_sources.get_all()
     
-#     return sum([account.balance for account in accounts])
-
-
-# all_account_balances = get_all_account_balances(uow)
+    
+#if __name__ == "__main__":
+#
+#    engines_config = {'SQLITE': {'conn_vars': {'db_name': 'inference_modelling_test'}},
+#                      'TERADATA': {'conn_vars': {'host': "10.0.2.15",
+#                                                 'username': 'dbc',
+#                                                 'password': None,
+#                                                 'logmech': None}}}
+#
+#    ds = DataSourcesGroup({}, engines_config)
+#
+#    print(ds.enginesEnum.TERADATA.__dict__)

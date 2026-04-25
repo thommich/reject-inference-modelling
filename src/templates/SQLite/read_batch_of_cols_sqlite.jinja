@@ -1,0 +1,9 @@
+SELECT  
+    {%- for col in columns_list %}
+        {%- if loop.last %} 
+            A.{{col}} 
+        {%- else %} 
+            A.{{col}},
+        {%- endif %}
+    {%- endfor %} 
+FROM {{table_name}} as A;

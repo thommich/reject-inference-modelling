@@ -1,150 +1,32 @@
 from __future__ import annotations
 
-import abc 
+import abc
 from abc import abstractmethod
-from typing import List, Callable, Tuple, Dict
+from typing import List, Tuple, Dict
 import pandas as pd
-import logging
-
-# Create Logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create stream handler
-handler = logging.StreamHandler()
-    
-handler.setLevel(logging.INFO)
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s|%(name)s|%(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-
-# Add handler to Logger
-logger.addHandler(handler)
 
 
-class EngineFactory:
-    """Factory for creating all different types of engine objects"""
-    
-    def __init__(self, eng_params: Dict, builders: Dict):
-        """
-        Initializes the new Engine Factory object
+class EnginesInterface(abc.ABC):
+    """ Defines an interface for the implementation Engines.
 
-        Parameters
-        ----------
-        eng_params : Dict
-            Dictionary of engine parameters
-        builders : Dict
-            Container to hold the available engine builders
-        """
-        self.eng_params = eng_params
-        self._builders = builders
-    
-    
-    def register_builder(self, flavour: str, builder: Callable):
-        """
-        Register a new builder to the factory
-
-        Parameters
-        ----------
-        flavour : str
-            A name that designates the type of the DBMS served by the engine
-        builder : Callable
-            The custom builder developed for the engine's creation
-        """
-        self._builders[flavour] = builder(self.eng_params)
-
-
-    def create(self, flavour:str) -> EnginesInterface:
-        """
-        Retrieves and calls the appropiate builder using the name provided by the 'flavour' parameter
-
-        Parameters
-        ----------
-        flavour : str
-            A name that designates the type of the DBMS engine
-
-        Returns
-        -------
-        EnginesInterface
-            The Engine object created by the builder
-
-        Raises
-        ------
-        ValueError
-            If the 'flavour' parameter doesn't correspond to a previously registered builder
-        """
-        builder = self._builders.get(flavour)
-        
-        if not builder:
-            raise ValueError("No engine specified for the value {flavour}")
-        
-        return builder()
-    
-    
-    def get(self, flavour: str) -> EnginesInterface:
-        """
-        Calls the 'create' method on the instance itself passing down the 'flavour' parameter
-
-        Parameters
-        ----------
-        flavour : str
-            A name that designates the type of the DBMS served by the engine
-
-        Returns
-        -------
-        EnginesInterface
-            The Engine object created by the builder
-        """
-        return self.create(flavour)    
-
-
-
-
-class EngineInstanceProvider(EngineFactory):
-        
-    def __init__(self, eng_params: Dict) -> None:
-        self._builders = {}
-        super().__init__(eng_params, self._builders)
-        
-                        
-    def get(self, flavour: str) -> EnginesInterface:
-        return self.create(flavour)
-
-
-
-class EnginesInterface(metaclass=abc.ABCMeta):
+    This interface is designed to be extensible so that the algorithm can be adapted to consume data from 
+    virtually any data source. It is defined as a metaclass that should
     """
-
-    """
-    @property
-    @abstractmethod
-    def name(self):
-        raise NotImplementedError
+    _eng_registry = {}
+        
+    @classmethod
+    def __init_subclass__(cls, eng=None, **kwargs):
+        super().__init_subclass__()
+        if eng is not None:
+            #super(cls,cls)._eng_registry[eng] = cls
+            cls._eng_registry[eng] = cls
+            cls.eng = cls
     
     @classmethod
-    @property
     @abstractmethod
-    def conn(cls):#cls):
+    def conn(cls):
         raise NotImplementedError
-
-    @classmethod
-    def __subclasshook__(cls, subclass):
-        return (hasattr(subclass, 'get_db_connection') and 
-                callable(subclass.get_db_connection) and 
-                hasattr(subclass, 'close_db_connection') and 
-                callable(subclass.close_db_connection) and
-                hasattr(subclass, 'execute_query') and 
-                callable(subclass.execute_query) and
-                hasattr(subclass, 'read_data_from_db') and 
-                callable(subclass.read_data_from_db) and
-                hasattr(subclass, 'get_table_shape') and 
-                callable(subclass.get_table_shape) and                               
-                hasattr(subclass, 'get_table_columns') and 
-                callable(subclass.get_table_columns) or 
-                NotImplemented)
     
-    @abc.abstractmethod
-    def __init__(self, engines_cfg: Dict[str,dict]):
-        raise NotImplementedError
 
     @abc.abstractmethod
     def get_db_connection(self):
@@ -176,6 +58,12 @@ class EnginesInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     
+    @abc.abstractmethod
+    def join_aud_ds_query(self, **kwargs) -> str:
+        raise NotImplementedError
     
-# class EnginesBuilder(metaclass=abc.ABCMeta):
-#     pass
+    @abc.abstractmethod
+    def read_data_batch(self, **kwargs) -> str:
+        raise NotImplementedError
+
+    
