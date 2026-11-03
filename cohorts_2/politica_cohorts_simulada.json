@@ -1,0 +1,44 @@
+{
+  "catalog_version": "simulado-20261026-v3",
+  "status": "demonstracao",
+  "total_marker": "<TOTAL>",
+  "col_safra": "safra",
+  "col_amostra": "amostra",
+  "development_sample": "desenvolvimento",
+  "dimensions": {
+    "faixa_renda": {"approved": true, "rationale": "Dimensão sintética de capacidade econômica."},
+    "exposicao": {"approved": true, "rationale": "Dimensão sintética de exposição."},
+    "origem": {"approved": true, "rationale": "Dimensão sintética de origem."},
+    "relacionamento": {"approved": true, "rationale": "Dimensão sintética de relacionamento."},
+    "canal": {"approved": true, "rationale": "Dimensão sintética de canal."},
+    "garantia": {"approved": true, "rationale": "Dimensão sintética de garantia, com nulo genuíno."},
+    "historico": {"approved": true, "rationale": "Dimensão sintética de histórico."},
+    "regiao": {"approved": true, "rationale": "Dimensão sintética de região."}
+  },
+  "cohort_minimums": {
+    "qtd_total": 1000,
+    "qtd_performance": 850,
+    "qtd_bons": 650,
+    "qtd_maus": 100
+  },
+  "sample_minimums": {
+    "qtd_total": 1000,
+    "qtd_performance": 850,
+    "qtd_bons": 650,
+    "qtd_maus": 100
+  },
+  "minimum_eligible_coverage": 0.8,
+  "minimum_profile_coverage": 0.8,
+  "temporal": {
+    "required": true,
+    "minimum_presence_fraction": 1.0,
+    "maximum_relative_share_shift": 0.75,
+    "minimum_bad_for_risk_signal": 10
+  },
+  "priority_profiles": [
+    {"id": "origem_B", "conditions": {"origem": "B"}},
+    {"id": "garantia_ausente", "conditions": {"garantia": null}},
+    {"id": "regiao_interior", "conditions": {"regiao": "interior"}}
+  ],
+  "maximum_supplementary": 3
+}
