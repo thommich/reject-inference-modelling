@@ -1,0 +1,5 @@
+# Tested with Python 3.10 in the local AWS-free simulation.
+numpy==1.26.4
+pandas==2.0.3
+scipy==1.10.1
+feature-engine==1.6.2
