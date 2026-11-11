@@ -272,3 +272,59 @@ SELECT
     COUNT_IF(n_rows > n_distinct_combinations)
         AS snapshots_with_repeated_combinations
 FROM per_snapshot;
+
+
+
+
+
+WITH sampled AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        cod_moda_cred_risc_bace,
+        cod_orig_risc_bace,
+        cod_inst_finn_risc_bace,
+        cod_chav_risc_bace,
+        cod_vncl_moed_esgr_risc_bace
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Lote'
+      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
+      AND cod_idef_pess IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
+                  1, 8
+              ),
+              16
+          ),
+          1000
+      ) = 0
+),
+repeated AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        cod_moda_cred_risc_bace,
+        cod_orig_risc_bace,
+        cod_inst_finn_risc_bace,
+        COUNT(*) AS n_rows,
+        COUNT(DISTINCT cod_chav_risc_bace) AS n_risk_keys,
+        COUNT(DISTINCT cod_vncl_moed_esgr_risc_bace)
+            AS n_currency_links
+    FROM sampled
+    GROUP BY 1,2,3,4,5,6
+    HAVING COUNT(*) > 1
+)
+SELECT
+    COUNT(*) AS repeated_key_groups,
+    SUM(n_rows) AS rows_in_repeated_groups,
+    MAX(n_rows) AS max_rows_per_group,
+    COUNT_IF(n_risk_keys > 1)
+        AS groups_with_multiple_risk_keys,
+    COUNT_IF(n_currency_links > 1)
+        AS groups_with_multiple_currency_links
+FROM repeated;
