@@ -1,141 +1,27 @@
 
-WITH parsed AS (
-    SELECT
-        cod_apla_risc_bace,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-
-        COALESCE(
-            TRY(DATE_PARSE(
-                TRIM(dat_hor_cslt_risc_bace),
-                '%Y-%m-%d %H:%i:%s'
-            )),
-            TRY(DATE_PARSE(
-                TRIM(dat_hor_cslt_risc_bace),
-                '%d.%m.%Y%H:%i:%s'
-            )),
-            TRY(DATE_PARSE(
-                TRIM(dat_hor_cslt_risc_bace),
-                '%d.%m.%Y %H:%i:%s'
-            ))
-        ) AS consultation_ts
-
-    FROM
-        "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
-        ."risco_bacen_scr"
-
-    WHERE anomesdia = '20250101'
-),
-
-lagged AS (
-    SELECT
-        cod_apla_risc_bace,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        consultation_ts,
-
-        DATE_DIFF(
-            'day',
-            TIMESTAMP '2025-01-31 00:00:00',
-            consultation_ts
-        ) AS lag_days
-
-    FROM parsed
-)
-
-SELECT
-    cod_apla_risc_bace AS acquisition_channel,
-    cod_prco_risc_bace AS processing_protocol,
-
-    COUNT(*) AS n_rows,
-
-    COUNT_IF(
-        consultation_ts IS NULL
-    ) AS n_parse_failures,
-
-    MIN(lag_days) AS min_lag_days,
-
-    APPROX_PERCENTILE(
-        lag_days, 0.50
-    ) AS median_lag_days,
-
-    APPROX_PERCENTILE(
-        lag_days, 0.90
-    ) AS p90_lag_days,
-
-    MAX(lag_days) AS max_lag_days
-
-FROM lagged
-
-GROUP BY
-    cod_apla_risc_bace,
-    cod_prco_risc_bace
-
-ORDER BY
-    n_rows DESC
-
-
-
-
-
-
-SELECT
-    cod_apla_risc_bace AS acquisition_channel,
-
-    CASE
-        WHEN TRY_CAST(
-            cod_prco_risc_bace AS BIGINT
-        ) IS NOT NULL
-        THEN 'Numeric'
-        ELSE COALESCE(
-            cod_prco_risc_bace,
-            '<NULL>'
-        )
-    END AS protocol_category,
-
-    txt_ano_mes_risc_bace AS scr_reference_month,
-
-    COUNT(*) AS n_rows
-
-FROM
-    "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
-    ."risco_bacen_scr"
-
-WHERE anomesdia = '20250101'
-
-GROUP BY
-    cod_apla_risc_bace,
-    CASE
-        WHEN TRY_CAST(
-            cod_prco_risc_bace AS BIGINT
-        ) IS NOT NULL
-        THEN 'Numeric'
-        ELSE COALESCE(
-            cod_prco_risc_bace,
-            '<NULL>'
-        )
-    END,
-    txt_ano_mes_risc_bace
-
-ORDER BY
-    n_rows DESC
-
-
-
-
-
 WITH sampled AS (
     SELECT
-        cod_prco_risc_bace,
+        cod_apla_risc_bace,
+
+        CASE
+            WHEN TRY_CAST(
+                cod_prco_risc_bace AS BIGINT
+            ) IS NOT NULL
+            THEN 'Numeric'
+            ELSE COALESCE(
+                cod_prco_risc_bace,
+                '<NULL>'
+            )
+        END AS protocol_category,
+
         dat_hor_cslt_risc_bace
+
     FROM
         "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
         ."risco_bacen_scr"
+
     WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(
-          cod_prco_risc_bace AS BIGINT
-      ) IS NOT NULL
+
       AND MOD(
           FROM_BASE(
               SUBSTR(
@@ -155,72 +41,19 @@ WITH sampled AS (
 )
 
 SELECT
-    dat_hor_cslt_risc_bace AS raw_consultation_timestamp,
-    COUNT(*) AS n_rows,
-    APPROX_DISTINCT(
-        cod_prco_risc_bace
-    ) AS approx_protocols
-
-FROM sampled
-
-GROUP BY
-    dat_hor_cslt_risc_bace
-
-ORDER BY
-    n_rows DESC
-
-
-
-
-WITH sampled AS (
-    SELECT
-        anomesdia,
-        txt_ano_mes_risc_bace,
-        dat_hor_cslt_risc_bace
-    FROM
-        "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
-        ."risco_bacen_scr"
-
-    WHERE anomesdia IN (
-        '20240101',
-        '20250101',
-        '20250601'
-    )
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(
-          cod_prco_risc_bace AS BIGINT
-      ) IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(
-                      MD5(
-                          TO_UTF8(
-                              CAST(cod_idef_pess AS VARCHAR)
-                          )
-                      )
-                  ),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-)
-
-SELECT
-    anomesdia,
-    txt_ano_mes_risc_bace AS scr_reference_month,
+    cod_apla_risc_bace AS acquisition_channel,
+    protocol_category,
     dat_hor_cslt_risc_bace AS consultation_timestamp,
     COUNT(*) AS n_sampled_rows
 
 FROM sampled
 
 GROUP BY
-    anomesdia,
-    txt_ano_mes_risc_bace,
+    cod_apla_risc_bace,
+    protocol_category,
     dat_hor_cslt_risc_bace
 
 ORDER BY
-    anomesdia,
+    acquisition_channel,
+    protocol_category,
     n_sampled_rows DESC
