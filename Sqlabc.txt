@@ -1,620 +1,75 @@
-SELECT
-    cod_apla_risc_bace,
-    CASE
-        WHEN cod_prco_risc_bace IN ('RI', 'RM', 'RZ', 'Interno', 'Externo')
-            THEN cod_prco_risc_bace
-        WHEN TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-            THEN 'NUMERIC_PROTOCOL'
-        ELSE 'OTHER_OR_NULL'
-    END AS protocol_group,
-    COUNT(*) AS n_rows,
-    COUNT_IF(
-        dat_hor_cslt_risc_bace IS NULL
-        OR TRIM(dat_hor_cslt_risc_bace) = ''
-    ) AS missing_timestamp,
-    MIN(TRY_CAST(dat_hor_cslt_risc_bace AS TIMESTAMP)) AS earliest_consultation,
-    MAX(TRY_CAST(dat_hor_cslt_risc_bace AS TIMESTAMP)) AS latest_consultation
-FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-WHERE anomesdia = '20250101'
-GROUP BY 1, 2
-ORDER BY n_rows DESC;
-
-
-SELECT
-    SUBSTR(dat_hor_cslt_risc_bace, 1, 7) AS consultation_month,
-    COUNT(*) AS n_rows,
-    APPROX_DISTINCT(cod_idef_pess) AS approx_people
-FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-WHERE anomesdia = '20250101'
-  AND cod_apla_risc_bace = 'Consulta Online'
-  AND cod_prco_risc_bace = 'Externo'
-GROUP BY 1
-ORDER BY 1;
-
 
 WITH parsed AS (
     SELECT
-        cod_idef_pess,
+        cod_apla_risc_bace,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+
         COALESCE(
             TRY(DATE_PARSE(
-                dat_hor_cslt_risc_bace,
+                TRIM(dat_hor_cslt_risc_bace),
                 '%Y-%m-%d %H:%i:%s'
             )),
             TRY(DATE_PARSE(
-                dat_hor_cslt_risc_bace,
+                TRIM(dat_hor_cslt_risc_bace),
                 '%d.%m.%Y%H:%i:%s'
             )),
             TRY(DATE_PARSE(
-                dat_hor_cslt_risc_bace,
+                TRIM(dat_hor_cslt_risc_bace),
                 '%d.%m.%Y %H:%i:%s'
             ))
         ) AS consultation_ts
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+
+    FROM
+        "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
+        ."risco_bacen_scr"
+
     WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Online'
-      AND cod_prco_risc_bace = 'Externo'
+),
+
+lagged AS (
+    SELECT
+        cod_apla_risc_bace,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        consultation_ts,
+
+        DATE_DIFF(
+            'day',
+            TIMESTAMP '2025-01-31 00:00:00',
+            consultation_ts
+        ) AS lag_days
+
+    FROM parsed
 )
+
 SELECT
-    DATE_FORMAT(consultation_ts, '%Y-%m') AS consultation_month,
+    cod_apla_risc_bace AS acquisition_channel,
+    cod_prco_risc_bace AS processing_protocol,
+
     COUNT(*) AS n_rows,
-    APPROX_DISTINCT(cod_idef_pess) AS approx_people
-FROM parsed
-GROUP BY 1
-ORDER BY 1;
 
+    COUNT_IF(
+        consultation_ts IS NULL
+    ) AS n_parse_failures,
 
+    MIN(lag_days) AS min_lag_days,
 
-SELECT
-    CASE
-        WHEN REGEXP_LIKE(
-            dat_hor_cslt_risc_bace,
-            '^\d{4}-\d{2}-\d{2} '
-        ) THEN 'ISO_FORMAT'
+    APPROX_PERCENTILE(
+        lag_days, 0.50
+    ) AS median_lag_days,
 
-        WHEN REGEXP_LIKE(
-            dat_hor_cslt_risc_bace,
-            '^\d{2}\.\d{2}\.\d{4}'
-        ) THEN 'BR_FORMAT'
+    APPROX_PERCENTILE(
+        lag_days, 0.90
+    ) AS p90_lag_days,
 
-        WHEN dat_hor_cslt_risc_bace IS NULL
-          OR TRIM(dat_hor_cslt_risc_bace) = ''
-        THEN 'MISSING'
+    MAX(lag_days) AS max_lag_days
 
-        ELSE 'OTHER'
-    END AS timestamp_format,
-    COUNT(*) AS n_rows
-FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-WHERE anomesdia = '20250101'
-  AND cod_apla_risc_bace = 'Consulta Online'
-  AND cod_prco_risc_bace = 'Externo'
-GROUP BY 1
-ORDER BY n_rows DESC;
+FROM lagged
 
+GROUP BY
+    cod_apla_risc_bace,
+    cod_prco_risc_bace
 
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        dat_hor_cslt_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Online'
-      AND cod_prco_risc_bace = 'Externo'
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          100
-      ) = 0
-),
-per_person AS (
-    SELECT
-        cod_idef_pess,
-        COUNT(*) AS n_rows,
-        COUNT(DISTINCT dat_hor_cslt_risc_bace) AS n_consultation_timestamps
-    FROM sampled
-    GROUP BY cod_idef_pess
-)
-SELECT
-    COUNT(*) AS sampled_people,
-    COUNT_IF(n_consultation_timestamps > 1)
-        AS people_with_multiple_consultations,
-    APPROX_PERCENTILE(n_consultation_timestamps, 0.50)
-        AS p50_consultations,
-    APPROX_PERCENTILE(n_consultation_timestamps, 0.90)
-        AS p90_consultations,
-    APPROX_PERCENTILE(n_consultation_timestamps, 0.99)
-        AS p99_consultations,
-    MAX(n_consultation_timestamps)
-        AS max_consultations
-FROM per_person;
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        dat_hor_cslt_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Online'
-      AND cod_prco_risc_bace = 'Externo'
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          100
-      ) = 0
-),
-per_snapshot AS (
-    SELECT
-        cod_idef_pess,
-        dat_hor_cslt_risc_bace,
-        COUNT(*) AS n_rows
-    FROM sampled
-    GROUP BY 1, 2
-)
-SELECT
-    COUNT(*) AS n_snapshots,
-    APPROX_PERCENTILE(n_rows, 0.50) AS p50_rows,
-    APPROX_PERCENTILE(n_rows, 0.90) AS p90_rows,
-    APPROX_PERCENTILE(n_rows, 0.99) AS p99_rows,
-    MAX(n_rows) AS max_rows
-FROM per_snapshot;
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Online'
-      AND cod_prco_risc_bace = 'Externo'
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          100
-      ) = 0
-),
-per_snapshot AS (
-    SELECT
-        cod_idef_pess,
-        dat_hor_cslt_risc_bace,
-        COUNT(*) AS n_rows,
-        COUNT(DISTINCT cod_moda_cred_risc_bace) AS n_modalities,
-        COUNT(DISTINCT cod_orig_risc_bace) AS n_origins,
-        COUNT(DISTINCT cod_inst_finn_risc_bace) AS n_institutions,
-        COUNT(DISTINCT CONCAT(
-            COALESCE(cod_moda_cred_risc_bace, '<NULL>'), '|',
-            COALESCE(cod_orig_risc_bace, '<NULL>'), '|',
-            COALESCE(cod_inst_finn_risc_bace, '<NULL>')
-        )) AS n_distinct_combinations
-    FROM sampled
-    GROUP BY 1, 2
-)
-SELECT
-    COUNT(*) AS n_snapshots,
-    APPROX_PERCENTILE(n_rows, 0.50) AS p50_rows,
-    APPROX_PERCENTILE(n_modalities, 0.50) AS p50_modalities,
-    APPROX_PERCENTILE(n_origins, 0.50) AS p50_origins,
-    APPROX_PERCENTILE(n_institutions, 0.50) AS p50_institutions,
-    COUNT_IF(n_rows > n_distinct_combinations)
-        AS snapshots_with_repeated_combinations,
-    MAX(n_rows) AS max_rows
-FROM per_snapshot;
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-),
-per_snapshot AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        COUNT(*) AS n_rows,
-        COUNT(DISTINCT ROW(
-            cod_moda_cred_risc_bace,
-            cod_orig_risc_bace,
-            cod_inst_finn_risc_bace
-        )) AS n_distinct_combinations
-    FROM sampled
-    GROUP BY 1, 2, 3
-)
-SELECT
-    COUNT(*) AS n_snapshots,
-    APPROX_PERCENTILE(n_rows, 0.50) AS p50_rows,
-    APPROX_PERCENTILE(n_rows, 0.90) AS p90_rows,
-    APPROX_PERCENTILE(n_rows, 0.99) AS p99_rows,
-    MAX(n_rows) AS max_rows,
-    COUNT_IF(n_rows > n_distinct_combinations)
-        AS snapshots_with_repeated_combinations
-FROM per_snapshot;
-
-
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_chav_risc_bace,
-        cod_vncl_moed_esgr_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-),
-repeated AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        COUNT(*) AS n_rows,
-        COUNT(DISTINCT cod_chav_risc_bace) AS n_risk_keys,
-        COUNT(DISTINCT cod_vncl_moed_esgr_risc_bace)
-            AS n_currency_links
-    FROM sampled
-    GROUP BY 1,2,3,4,5,6
-    HAVING COUNT(*) > 1
-)
-SELECT
-    COUNT(*) AS repeated_key_groups,
-    SUM(n_rows) AS rows_in_repeated_groups,
-    MAX(n_rows) AS max_rows_per_group,
-    COUNT_IF(n_risk_keys > 1)
-        AS groups_with_multiple_risk_keys,
-    COUNT_IF(n_currency_links > 1)
-        AS groups_with_multiple_currency_links
-FROM repeated;
-
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_vncl_moed_esgr_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-),
-key_counts AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_vncl_moed_esgr_risc_bace,
-        COUNT(*) AS n_rows
-    FROM sampled
-    GROUP BY 1,2,3,4,5,6,7
-)
-SELECT
-    COUNT(*) AS distinct_key_groups,
-    COUNT_IF(n_rows > 1) AS repeated_key_groups,
-    COALESCE(SUM(IF(n_rows > 1, n_rows, 0)), 0)
-        AS rows_in_repeated_groups,
-    MAX(n_rows) AS max_rows_per_key
-FROM key_counts;
-
-
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_chav_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr_ii
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-),
-per_group AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        COUNT(*) AS n_rows,
-        COUNT(DISTINCT cod_chav_risc_bace)
-            AS n_distinct_risk_keys
-    FROM sampled
-    GROUP BY 1,2,3,4,5,6
-)
-SELECT
-    COUNT(*) AS n_groups,
-    COUNT_IF(n_rows > 1) AS groups_with_multiple_rows,
-    APPROX_PERCENTILE(n_rows, 0.50) AS p50_rows,
-    APPROX_PERCENTILE(n_rows, 0.90) AS p90_rows,
-    APPROX_PERCENTILE(n_rows, 0.99) AS p99_rows,
-    MAX(n_rows) AS max_rows,
-    COUNT_IF(n_rows > 1 AND n_distinct_risk_keys > 1)
-        AS groups_with_multiple_risk_keys
-FROM per_group;
-
-
-
-
-
-
-WITH sampled AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_vncl_moed_esgr_risc_bace,
-        cod_chav_risc_bace
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr_ii
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-),
-key_counts AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-        cod_vncl_moed_esgr_risc_bace,
-        cod_chav_risc_bace,
-        COUNT(*) AS n_rows
-    FROM sampled
-    GROUP BY 1,2,3,4,5,6,7,8
-)
-SELECT
-    COUNT(*) AS distinct_key_groups,
-    COUNT_IF(n_rows > 1) AS repeated_key_groups,
-    COALESCE(SUM(IF(n_rows > 1, n_rows, 0)), 0)
-        AS rows_in_repeated_groups,
-    MAX(n_rows) AS max_rows_per_key
-FROM key_counts;
-
-
-
-
-
-WITH consolidado AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        txt_ano_mes_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-
-        COUNT(*) AS n_consolidado,
-        SUM(COALESCE(vlr_totl_cred_vncr_risc, 0))
-            AS saldo_consolidado
-
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
-
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-
-    GROUP BY 1,2,3,4,5,6,7
-),
-
-detalhado AS (
-    SELECT
-        cod_idef_pess,
-        cod_prco_risc_bace,
-        dat_hor_cslt_risc_bace,
-        txt_ano_mes_risc_bace,
-        cod_moda_cred_risc_bace,
-        cod_orig_risc_bace,
-        cod_inst_finn_risc_bace,
-
-        COUNT(*) AS n_detalhado,
-        SUM(COALESCE(vlr_totl_cred_vncr_risc, 0))
-            AS saldo_detalhado
-
-    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr_ii
-
-    WHERE anomesdia = '20250101'
-      AND cod_apla_risc_bace = 'Consulta Lote'
-      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
-      AND cod_idef_pess IS NOT NULL
-      AND MOD(
-          FROM_BASE(
-              SUBSTR(
-                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
-                  1, 8
-              ),
-              16
-          ),
-          1000
-      ) = 0
-
-    GROUP BY 1,2,3,4,5,6,7
-),
-
-comparison AS (
-    SELECT
-        CASE
-            WHEN c.n_consolidado IS NULL
-                THEN 'ONLY_DETALHADO'
-            WHEN d.n_detalhado IS NULL
-                THEN 'ONLY_CONSOLIDADO'
-            WHEN ABS(
-                c.saldo_consolidado - d.saldo_detalhado
-            ) <= GREATEST(
-                0.01,
-                0.000001 * GREATEST(
-                    ABS(c.saldo_consolidado),
-                    ABS(d.saldo_detalhado)
-                )
-            )
-                THEN 'MATCH'
-            ELSE 'DIFFERENT_BALANCE'
-        END AS reconciliation_status,
-
-        c.saldo_consolidado,
-        d.saldo_detalhado,
-        CASE
-            WHEN c.n_consolidado IS NOT NULL
-             AND d.n_detalhado IS NOT NULL
-            THEN ABS(
-                c.saldo_consolidado - d.saldo_detalhado
-            )
-        END AS abs_difference
-
-    FROM consolidado c
-    FULL OUTER JOIN detalhado d
-      ON c.cod_idef_pess = d.cod_idef_pess
-     AND c.cod_prco_risc_bace
-         IS NOT DISTINCT FROM d.cod_prco_risc_bace
-     AND c.dat_hor_cslt_risc_bace
-         IS NOT DISTINCT FROM d.dat_hor_cslt_risc_bace
-     AND c.txt_ano_mes_risc_bace
-         IS NOT DISTINCT FROM d.txt_ano_mes_risc_bace
-     AND c.cod_moda_cred_risc_bace
-         IS NOT DISTINCT FROM d.cod_moda_cred_risc_bace
-     AND c.cod_orig_risc_bace
-         IS NOT DISTINCT FROM d.cod_orig_risc_bace
-     AND c.cod_inst_finn_risc_bace
-         IS NOT DISTINCT FROM d.cod_inst_finn_risc_bace
-)
-
-SELECT
-    reconciliation_status,
-    COUNT(*) AS n_groups,
-    SUM(COALESCE(saldo_consolidado, 0))
-        AS total_consolidado,
-    SUM(COALESCE(saldo_detalhado, 0))
-        AS total_detalhado,
-    SUM(COALESCE(abs_difference, 0))
-        AS sum_absolute_difference,
-    MAX(abs_difference) AS max_absolute_difference
-
-FROM comparison
-GROUP BY reconciliation_status
-ORDER BY n_groups DESC;
+ORDER BY
+    n_rows DESC
