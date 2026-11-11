@@ -73,3 +73,49 @@ GROUP BY
 
 ORDER BY
     n_rows DESC
+
+
+
+
+
+
+SELECT
+    cod_apla_risc_bace AS acquisition_channel,
+
+    CASE
+        WHEN TRY_CAST(
+            cod_prco_risc_bace AS BIGINT
+        ) IS NOT NULL
+        THEN 'Numeric'
+        ELSE COALESCE(
+            cod_prco_risc_bace,
+            '<NULL>'
+        )
+    END AS protocol_category,
+
+    txt_ano_mes_risc_bace AS scr_reference_month,
+
+    COUNT(*) AS n_rows
+
+FROM
+    "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
+    ."risco_bacen_scr"
+
+WHERE anomesdia = '20250101'
+
+GROUP BY
+    cod_apla_risc_bace,
+    CASE
+        WHEN TRY_CAST(
+            cod_prco_risc_bace AS BIGINT
+        ) IS NOT NULL
+        THEN 'Numeric'
+        ELSE COALESCE(
+            cod_prco_risc_bace,
+            '<NULL>'
+        )
+    END,
+    txt_ano_mes_risc_bace
+
+ORDER BY
+    n_rows DESC
