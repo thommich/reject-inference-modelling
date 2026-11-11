@@ -18,3 +18,15 @@ FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
 WHERE anomesdia = '20250101'
 GROUP BY 1, 2
 ORDER BY n_rows DESC;
+
+
+SELECT
+    SUBSTR(dat_hor_cslt_risc_bace, 1, 7) AS consultation_month,
+    COUNT(*) AS n_rows,
+    APPROX_DISTINCT(cod_idef_pess) AS approx_people
+FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+WHERE anomesdia = '20250101'
+  AND cod_apla_risc_bace = 'Consulta Online'
+  AND cod_prco_risc_bace = 'Externo'
+GROUP BY 1
+ORDER BY 1;
