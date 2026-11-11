@@ -30,3 +30,62 @@ WHERE anomesdia = '20250101'
   AND cod_prco_risc_bace = 'Externo'
 GROUP BY 1
 ORDER BY 1;
+
+
+WITH parsed AS (
+    SELECT
+        cod_idef_pess,
+        COALESCE(
+            TRY(DATE_PARSE(
+                dat_hor_cslt_risc_bace,
+                '%Y-%m-%d %H:%i:%s'
+            )),
+            TRY(DATE_PARSE(
+                dat_hor_cslt_risc_bace,
+                '%d.%m.%Y%H:%i:%s'
+            )),
+            TRY(DATE_PARSE(
+                dat_hor_cslt_risc_bace,
+                '%d.%m.%Y %H:%i:%s'
+            ))
+        ) AS consultation_ts
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Online'
+      AND cod_prco_risc_bace = 'Externo'
+)
+SELECT
+    DATE_FORMAT(consultation_ts, '%Y-%m') AS consultation_month,
+    COUNT(*) AS n_rows,
+    APPROX_DISTINCT(cod_idef_pess) AS approx_people
+FROM parsed
+GROUP BY 1
+ORDER BY 1;
+
+
+
+SELECT
+    CASE
+        WHEN REGEXP_LIKE(
+            dat_hor_cslt_risc_bace,
+            '^\d{4}-\d{2}-\d{2} '
+        ) THEN 'ISO_FORMAT'
+
+        WHEN REGEXP_LIKE(
+            dat_hor_cslt_risc_bace,
+            '^\d{2}\.\d{2}\.\d{4}'
+        ) THEN 'BR_FORMAT'
+
+        WHEN dat_hor_cslt_risc_bace IS NULL
+          OR TRIM(dat_hor_cslt_risc_bace) = ''
+        THEN 'MISSING'
+
+        ELSE 'OTHER'
+    END AS timestamp_format,
+    COUNT(*) AS n_rows
+FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+WHERE anomesdia = '20250101'
+  AND cod_apla_risc_bace = 'Consulta Online'
+  AND cod_prco_risc_bace = 'Externo'
+GROUP BY 1
+ORDER BY n_rows DESC;
