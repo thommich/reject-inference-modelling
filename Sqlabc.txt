@@ -222,3 +222,53 @@ SELECT
         AS snapshots_with_repeated_combinations,
     MAX(n_rows) AS max_rows
 FROM per_snapshot;
+
+
+
+WITH sampled AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        cod_moda_cred_risc_bace,
+        cod_orig_risc_bace,
+        cod_inst_finn_risc_bace
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Lote'
+      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
+      AND cod_idef_pess IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
+                  1, 8
+              ),
+              16
+          ),
+          1000
+      ) = 0
+),
+per_snapshot AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        COUNT(*) AS n_rows,
+        COUNT(DISTINCT ROW(
+            cod_moda_cred_risc_bace,
+            cod_orig_risc_bace,
+            cod_inst_finn_risc_bace
+        )) AS n_distinct_combinations
+    FROM sampled
+    GROUP BY 1, 2, 3
+)
+SELECT
+    COUNT(*) AS n_snapshots,
+    APPROX_PERCENTILE(n_rows, 0.50) AS p50_rows,
+    APPROX_PERCENTILE(n_rows, 0.90) AS p90_rows,
+    APPROX_PERCENTILE(n_rows, 0.99) AS p99_rows,
+    MAX(n_rows) AS max_rows,
+    COUNT_IF(n_rows > n_distinct_combinations)
+        AS snapshots_with_repeated_combinations
+FROM per_snapshot;
