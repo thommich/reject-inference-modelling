@@ -484,3 +484,137 @@ SELECT
         AS rows_in_repeated_groups,
     MAX(n_rows) AS max_rows_per_key
 FROM key_counts;
+
+
+
+
+
+WITH consolidado AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        txt_ano_mes_risc_bace,
+        cod_moda_cred_risc_bace,
+        cod_orig_risc_bace,
+        cod_inst_finn_risc_bace,
+
+        COUNT(*) AS n_consolidado,
+        SUM(COALESCE(vlr_totl_cred_vncr_risc, 0))
+            AS saldo_consolidado
+
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Lote'
+      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
+      AND cod_idef_pess IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
+                  1, 8
+              ),
+              16
+          ),
+          1000
+      ) = 0
+
+    GROUP BY 1,2,3,4,5,6,7
+),
+
+detalhado AS (
+    SELECT
+        cod_idef_pess,
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace,
+        txt_ano_mes_risc_bace,
+        cod_moda_cred_risc_bace,
+        cod_orig_risc_bace,
+        cod_inst_finn_risc_bace,
+
+        COUNT(*) AS n_detalhado,
+        SUM(COALESCE(vlr_totl_cred_vncr_risc, 0))
+            AS saldo_detalhado
+
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr_ii
+
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Lote'
+      AND TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
+      AND cod_idef_pess IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
+                  1, 8
+              ),
+              16
+          ),
+          1000
+      ) = 0
+
+    GROUP BY 1,2,3,4,5,6,7
+),
+
+comparison AS (
+    SELECT
+        CASE
+            WHEN c.n_consolidado IS NULL
+                THEN 'ONLY_DETALHADO'
+            WHEN d.n_detalhado IS NULL
+                THEN 'ONLY_CONSOLIDADO'
+            WHEN ABS(
+                c.saldo_consolidado - d.saldo_detalhado
+            ) <= GREATEST(
+                0.01,
+                0.000001 * GREATEST(
+                    ABS(c.saldo_consolidado),
+                    ABS(d.saldo_detalhado)
+                )
+            )
+                THEN 'MATCH'
+            ELSE 'DIFFERENT_BALANCE'
+        END AS reconciliation_status,
+
+        c.saldo_consolidado,
+        d.saldo_detalhado,
+        CASE
+            WHEN c.n_consolidado IS NOT NULL
+             AND d.n_detalhado IS NOT NULL
+            THEN ABS(
+                c.saldo_consolidado - d.saldo_detalhado
+            )
+        END AS abs_difference
+
+    FROM consolidado c
+    FULL OUTER JOIN detalhado d
+      ON c.cod_idef_pess = d.cod_idef_pess
+     AND c.cod_prco_risc_bace
+         IS NOT DISTINCT FROM d.cod_prco_risc_bace
+     AND c.dat_hor_cslt_risc_bace
+         IS NOT DISTINCT FROM d.dat_hor_cslt_risc_bace
+     AND c.txt_ano_mes_risc_bace
+         IS NOT DISTINCT FROM d.txt_ano_mes_risc_bace
+     AND c.cod_moda_cred_risc_bace
+         IS NOT DISTINCT FROM d.cod_moda_cred_risc_bace
+     AND c.cod_orig_risc_bace
+         IS NOT DISTINCT FROM d.cod_orig_risc_bace
+     AND c.cod_inst_finn_risc_bace
+         IS NOT DISTINCT FROM d.cod_inst_finn_risc_bace
+)
+
+SELECT
+    reconciliation_status,
+    COUNT(*) AS n_groups,
+    SUM(COALESCE(saldo_consolidado, 0))
+        AS total_consolidado,
+    SUM(COALESCE(saldo_detalhado, 0))
+        AS total_detalhado,
+    SUM(COALESCE(abs_difference, 0))
+        AS sum_absolute_difference,
+    MAX(abs_difference) AS max_absolute_difference
+
+FROM comparison
+GROUP BY reconciliation_status
+ORDER BY n_groups DESC;
