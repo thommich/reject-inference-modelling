@@ -89,3 +89,46 @@ WHERE anomesdia = '20250101'
   AND cod_prco_risc_bace = 'Externo'
 GROUP BY 1
 ORDER BY n_rows DESC;
+
+
+WITH sampled AS (
+    SELECT
+        cod_idef_pess,
+        dat_hor_cslt_risc_bace
+    FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Online'
+      AND cod_prco_risc_bace = 'Externo'
+      AND cod_idef_pess IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(MD5(TO_UTF8(cod_idef_pess))),
+                  1, 8
+              ),
+              16
+          ),
+          100
+      ) = 0
+),
+per_person AS (
+    SELECT
+        cod_idef_pess,
+        COUNT(*) AS n_rows,
+        COUNT(DISTINCT dat_hor_cslt_risc_bace) AS n_consultation_timestamps
+    FROM sampled
+    GROUP BY cod_idef_pess
+)
+SELECT
+    COUNT(*) AS sampled_people,
+    COUNT_IF(n_consultation_timestamps > 1)
+        AS people_with_multiple_consultations,
+    APPROX_PERCENTILE(n_consultation_timestamps, 0.50)
+        AS p50_consultations,
+    APPROX_PERCENTILE(n_consultation_timestamps, 0.90)
+        AS p90_consultations,
+    APPROX_PERCENTILE(n_consultation_timestamps, 0.99)
+        AS p99_consultations,
+    MAX(n_consultation_timestamps)
+        AS max_consultations
+FROM per_person;
