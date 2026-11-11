@@ -119,3 +119,53 @@ GROUP BY
 
 ORDER BY
     n_rows DESC
+
+
+
+
+
+WITH sampled AS (
+    SELECT
+        cod_prco_risc_bace,
+        dat_hor_cslt_risc_bace
+    FROM
+        "db_corp_dadoscadastrais_gerirriscobacen_sor_01"
+        ."risco_bacen_scr"
+    WHERE anomesdia = '20250101'
+      AND cod_apla_risc_bace = 'Consulta Lote'
+      AND TRY_CAST(
+          cod_prco_risc_bace AS BIGINT
+      ) IS NOT NULL
+      AND MOD(
+          FROM_BASE(
+              SUBSTR(
+                  TO_HEX(
+                      MD5(
+                          TO_UTF8(
+                              CAST(cod_idef_pess AS VARCHAR)
+                          )
+                      )
+                  ),
+                  1, 8
+              ),
+              16
+          ),
+          1000
+      ) = 0
+)
+
+SELECT
+    dat_hor_cslt_risc_bace AS raw_consultation_timestamp,
+    COUNT(*) AS n_rows,
+    APPROX_DISTINCT(
+        cod_prco_risc_bace
+    ) AS approx_protocols
+
+FROM sampled
+
+GROUP BY
+    dat_hor_cslt_risc_bace
+
+ORDER BY
+    n_rows DESC
+
