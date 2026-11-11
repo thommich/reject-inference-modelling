@@ -1,0 +1,20 @@
+SELECT
+    cod_apla_risc_bace,
+    CASE
+        WHEN cod_prco_risc_bace IN ('RI', 'RM', 'RZ', 'Interno', 'Externo')
+            THEN cod_prco_risc_bace
+        WHEN TRY_CAST(cod_prco_risc_bace AS BIGINT) IS NOT NULL
+            THEN 'NUMERIC_PROTOCOL'
+        ELSE 'OTHER_OR_NULL'
+    END AS protocol_group,
+    COUNT(*) AS n_rows,
+    COUNT_IF(
+        dat_hor_cslt_risc_bace IS NULL
+        OR TRIM(dat_hor_cslt_risc_bace) = ''
+    ) AS missing_timestamp,
+    MIN(TRY_CAST(dat_hor_cslt_risc_bace AS TIMESTAMP)) AS earliest_consultation,
+    MAX(TRY_CAST(dat_hor_cslt_risc_bace AS TIMESTAMP)) AS latest_consultation
+FROM db_corp_dadoscadastrais_gerirriscobacen_sor_01.risco_bacen_scr
+WHERE anomesdia = '20250101'
+GROUP BY 1, 2
+ORDER BY n_rows DESC;
