@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Segment Impact Profiler — interactive demos</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{background:#10182a;color:#f5f7fc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:900px;margin:60px auto;padding:0 28px}
+h1{font-size:2.3rem;letter-spacing:-.035em;margin-bottom:10px}p{color:#b9c6db;line-height:1.6}.mark{color:#2dd4bf}.grid{display:grid;gap:18px;margin:34px 0}
+a{display:block;text-decoration:none;color:inherit;background:#18253c;border:1px solid #344662;border-radius:14px;padding:23px 28px;transition:.2s}a:hover{border-color:#2dd4bf;transform:translateY(-2px)}strong{font-size:1.15rem}small{display:block;color:#a9b8d4;margin-top:8px;font-size:.9rem}code{color:#d7c8ff}footer{font-size:.86rem;border-top:1px solid #344662;padding-top:22px;margin-top:34px}
+</style></head><body>
+<p class="mark">LOCAL HTML DEMO · SYNTHETIC DATA</p>
+<h1>Segment Impact Profiler</h1>
+<p>Three interactive approaches to SHAP explanations across population groups. All charts are self-contained, work offline, and use a synthetic LightGBM credit-risk model.</p>
+<div class="grid">
+<a href="age_band_01_impact_flow.html"><strong>01 — Feature Impact Flow</strong><small>Directional SHAP component magnitudes through a three-layer Sankey. Ribbons are not customer flows.</small></a>
+<a href="age_band_02_comparative_atlas.html"><strong>02 — Comparative Impact Atlas</strong><small>Small-multiple signed lollipop plots, with circle area reflecting overall feature strength.</small></a>
+<a href="age_band_02_atlas_focus_excluding_age.html"><strong>02b — Comparative Atlas, feature-focused</strong><small>Same view, temporarily excluding the dominant Age feature to surface other predictors.</small></a>
+<a href="age_band_04_segment_dashboard.html"><strong>04 — Segment Diagnostic Dashboard</strong><small>Choose a population group; inspect signed effects, differential effects, raw-margin waterfall, and mean PD.</small></a>
+</div>
+<footer><p>Source code and methods are documented in <code>README.md</code> in the accompanying package. Plots are illustrative; SHAP describes model predictions, not causal effects. All contributions use a raw-margin output scale.</p></footer></body></html>
