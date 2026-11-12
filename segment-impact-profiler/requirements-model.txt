@@ -1,0 +1,4 @@
+-r requirements.txt
+shap>=0.47
+lightgbm>=4.0
+xgboost>=2.0
