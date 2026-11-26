@@ -1684,3 +1684,298 @@ def Pytinela_parallel(
         _ensure_parent_dir(excluir_csv)
         excluir_df.to_csv(os.fspath(excluir_csv), index=False)
     return completo_df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    from __future__ import annotations
+
+import os
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+import pandas as pd
+from scipy.linalg.blas import ssyrk
+from scipy.stats import rankdata
+
+
+def _is_valid_spearman_column(s: pd.Series) -> bool:
+    """Return True if a Series is valid for Spearman correlation."""
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        return bool(s.cat.ordered or len(s.cat.categories) <= 2)
+    return bool(
+        pd.api.types.is_numeric_dtype(s.dtype)
+        and not pd.api.types.is_complex_dtype(s.dtype)
+    )
+
+
+def get_valid_spearman_columns(df: pd.DataFrame) -> list:
+    """Return column names eligible for Spearman correlation."""
+    return [
+        df.columns[j]
+        for j in range(df.shape[1])
+        if _is_valid_spearman_column(df.iloc[:, j])
+    ]
+
+
+def fast_spearman_corr(
+    df: pd.DataFrame,
+    row_chunk_size: int = 100_000,
+    n_jobs: int | None = None,
+    use_memmap: bool = True,
+    memmap_dir: str | None = None,
+    filter_invalid_cols: bool = True,
+    return_dataframe: bool = True,
+) -> pd.DataFrame | np.ndarray:
+    """
+    Compute the exact Spearman correlation matrix on CPU for very large
+    DataFrames (e.g., 2M rows x 7K columns) with bounded memory usage.
+
+    Supports numeric, boolean, ordered categorical, and binary categorical
+    columns. Requires NaN-free values in the included columns.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+    row_chunk_size : int, default 100_000
+        Rows processed per BLAS SSYRK chunk (~2.8 GB for 7K cols x 100K rows).
+    n_jobs : int | None, default None
+        Worker threads for Phase 1 ranking. Defaults to min(cpu_count, 16).
+    use_memmap : bool, default True
+        Store the (n_cols, n_rows) float32 standardized rank matrix on disk
+        (~56 GB for 7K x 2M) to keep extra RAM usage ~4 GB. Set False if you
+        have >64 GB free RAM.
+    memmap_dir : str | None, default None
+        Directory for the temporary memmap file (point to a fast NVMe SSD).
+    filter_invalid_cols : bool, default True
+        If True, automatically skip non-numeric and unordered multi-class
+        categorical columns without copying `df`. If False, raise TypeError
+        when such a column is encountered.
+    return_dataframe : bool, default True
+        Return a labeled pd.DataFrame if True, else a raw float64 np.ndarray.
+    """
+    n_rows = df.shape[0]
+
+    if filter_invalid_cols:
+        valid_idx = [
+            j
+            for j in range(df.shape[1])
+            if _is_valid_spearman_column(df.iloc[:, j])
+        ]
+    else:
+        valid_idx = list(range(df.shape[1]))
+
+    out_columns = df.columns[valid_idx]
+    n_cols = len(valid_idx)
+
+    if n_cols == 0:
+        empty = np.empty((0, 0), dtype=np.float64)
+        return (
+            pd.DataFrame(empty, index=out_columns, columns=out_columns)
+            if return_dataframe
+            else empty
+        )
+    if n_rows < 2:
+        nans = np.full((n_cols, n_cols), np.nan, dtype=np.float64)
+        return (
+            pd.DataFrame(nans, index=out_columns, columns=out_columns)
+            if return_dataframe
+            else nans
+        )
+
+    if n_jobs is None:
+        n_jobs = min(os.cpu_count() or 4, 16)
+
+    tmpdir_obj = None
+    z_mat = None
+
+    try:
+        # Shape (n_cols, n_rows) C-contiguous (~56 GB for 7K x 2M float32):
+        # - Phase 1 writes each ranked column sequentially (8 MB contiguous).
+        # - Phase 2 reads row chunks cleanly across all columns.
+        if use_memmap:
+            tmpdir_obj = tempfile.TemporaryDirectory(dir=memmap_dir)
+            mmap_path = os.path.join(tmpdir_obj.name, "ranks_f32.dat")
+            z_mat = np.memmap(
+                mmap_path, dtype=np.float32, mode="w+", shape=(n_cols, n_rows)
+            )
+        else:
+            z_mat = np.empty((n_cols, n_rows), dtype=np.float32)
+
+        const_cols = np.zeros(n_cols, dtype=bool)
+
+        # Phase 1: Parallel column ranking & L2 normalization
+        # NumPy/SciPy C loops release the GIL, avoiding DataFrame copies.
+        def _rank_column(out_j: int) -> None:
+            orig_j = valid_idx[out_j]
+            s = df.iloc[:, orig_j]
+            col_name = df.columns[orig_j]
+
+            if isinstance(s.dtype, pd.CategoricalDtype):
+                if not s.cat.ordered and len(s.cat.categories) > 2:
+                    raise TypeError(
+                        f"Column {orig_j} ({col_name!r}) is an unordered "
+                        f"categorical with {len(s.cat.categories)} levels. "
+                        "Spearman requires ordered or binary categories."
+                    )
+                codes = s.cat.codes.to_numpy(copy=False)
+                if (codes == -1).any():  # pandas encodes missing categories as -1
+                    raise ValueError(
+                        f"Column {orig_j} ({col_name!r}) contains missing categories."
+                    )
+                # O(N) exact average-tie ranking via category counts
+                counts = np.bincount(codes, minlength=len(s.cat.categories))
+                avg_ranks = np.cumsum(counts) - 0.5 * (counts - 1)
+                r = avg_ranks[codes]
+            else:
+                if not pd.api.types.is_numeric_dtype(s.dtype) or pd.api.types.is_complex_dtype(s.dtype):
+                    raise TypeError(
+                        f"Column {orig_j} ({col_name!r}) has unsupported dtype {s.dtype}."
+                    )
+                if pd.api.types.is_extension_array_dtype(s.dtype):
+                    col = s.to_numpy(dtype=np.float64, na_value=np.nan)
+                else:
+                    col = s.to_numpy(copy=False)
+
+                if np.issubdtype(col.dtype, np.floating) and np.isnan(col).any():
+                    raise ValueError(
+                        f"Column {orig_j} ({col_name!r}) contains NaNs. "
+                        "Drop or impute missing values before calling fast_spearman_corr."
+                    )
+                r = rankdata(col, method="average")
+
+            # Standardize in float64 to preserve numerical accuracy
+            r -= r.mean()
+            norm = np.linalg.norm(r)
+            if norm == 0.0:
+                const_cols[out_j] = True
+                z_mat[out_j, :] = 0.0
+            else:
+                r /= norm
+                z_mat[out_j, :] = r.astype(np.float32)
+
+        with ThreadPoolExecutor(max_workers=n_jobs) as pool:
+            for _ in pool.map(_rank_column, range(n_cols)):
+                pass
+
+        if isinstance(z_mat, np.memmap):
+            z_mat.flush()
+
+        # Phase 2: Row-chunked Z @ Z.T via BLAS SSYRK (~2.8 GB per 100K-row chunk)
+        corr = np.zeros((n_cols, n_cols), dtype=np.float64)
+
+        for start in range(0, n_rows, row_chunk_size):
+            end = min(start + row_chunk_size, n_rows)
+            chunk = np.ascontiguousarray(z_mat[:, start:end], dtype=np.float32)
+            # chunk.T is Fortran-contiguous (chunk_len, n_cols) -> zero-copy in BLAS
+            partial = ssyrk(alpha=1.0, a=chunk.T, trans=1, lower=0)
+            corr += partial
+
+        # Mirror upper triangle to lower triangle in-place (zero extra memory)
+        for i in range(1, n_cols):
+            corr[i, :i] = corr[:i, i]
+
+        # Clamp tiny float32 rounding drift and enforce exact diagonal / constant NaNs
+        np.clip(corr, -1.0, 1.0, out=corr)
+        np.fill_diagonal(corr, 1.0)
+        if const_cols.any():
+            corr[const_cols, :] = np.nan
+            corr[:, const_cols] = np.nan
+
+        if return_dataframe:
+            return pd.DataFrame(corr, index=out_columns, columns=out_columns)
+        return corr
+
+    finally:
+        # Release memmap handle before deleting temp directory (required on Windows)
+        if isinstance(z_mat, np.memmap):
+            z_mat._mmap.close()
+        del z_mat
+        if tmpdir_obj is not None:
+            tmpdir_obj.cleanup()
+
+
+if __name__ == "__main__":
+    # Quick correctness check against pandas on mixed column types
+    rng = np.random.default_rng(42)
+    n = 50_000
+    x = rng.normal(size=n).astype(np.float32)
+
+    sample_df = pd.DataFrame(
+        {
+            "num_a": x,
+            "num_b": (x * 2.0 + rng.normal(scale=0.5, size=n)).astype(np.float32),
+            "ordinal": pd.Categorical(
+                pd.qcut(x + rng.normal(scale=0.3, size=n), 3, labels=["low", "med", "high"]),
+                categories=["low", "med", "high"],
+                ordered=True,
+            ),
+            "binary_cat": pd.Categorical(np.where(x > 0, "yes", "no")),
+            "nominal_skip": pd.Categorical(rng.choice(["red", "green", "blue"], size=n)),
+            "text_skip": rng.choice(["a", "b", "c"], size=n),
+            "const_col": np.ones(n, dtype=np.float32),
+        }
+    )
+
+    corr_fast = fast_spearman_corr(sample_df, row_chunk_size=10_000, use_memmap=True)
+
+    # Compare against pandas after manually encoding the valid categoricals
+    ref_df = sample_df[get_valid_spearman_columns(sample_df)].copy()
+    for c in ref_df.columns:
+        if isinstance(ref_df[c].dtype, pd.CategoricalDtype):
+            ref_df[c] = ref_df[c].cat.codes
+    corr_ref = ref_df.corr(method="spearman")
+
+    assert np.allclose(corr_fast.to_numpy(), corr_ref.to_numpy(), atol=1e-5, equal_nan=True)
+    print("Matched pandas Spearman correlation within 1e-5!")
+    print(corr_fast.round(4))
+
+
+
+corr = fast_spearman_corr(
+    df,
+    row_chunk_size=100_000,
+    use_memmap=True,
+    memmap_dir="/path/to/fast_nvme_tmp",  # ~56 GB temporary space
+    filter_invalid_cols=True,             # skips nominal/text cols without copying df
+)
